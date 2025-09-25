@@ -739,6 +739,85 @@
             background: rgba(255, 215, 0, 0.2);
         }
 
+        /* 投票記錄樣式 */
+        .vote-history {
+            margin-top: 20px;
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .vote-history h4 {
+            color: #ffd700;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .vote-records {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .vote-record {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 8px 0;
+            border-left: 4px solid #2196F3;
+        }
+
+        .vote-record.team-vote {
+            border-left-color: #2196F3;
+        }
+
+        .vote-record.mission-vote {
+            border-left-color: #ff9800;
+        }
+
+        .vote-record h5 {
+            margin: 0 0 8px 0;
+            font-size: 0.9em;
+            color: #ffd700;
+        }
+
+        .voters-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin: 5px 0;
+        }
+
+        .voter-item {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+
+        .voter-approve {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid #4CAF50;
+            color: #4CAF50;
+        }
+
+        .voter-reject {
+            background: rgba(244, 67, 54, 0.3);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+
+        .voter-success {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid #4CAF50;
+            color: #4CAF50;
+        }
+
+        .voter-fail {
+            background: rgba(244, 67, 54, 0.3);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+
         #spinResult {
             background: rgba(255,255,255,0.1);
             padding: 20px;
@@ -1065,6 +1144,12 @@
                 <div class="other-players">
                     <h3>其他玩家</h3>
                     <div class="other-players-list" id="otherPlayersList"></div>
+                    
+                    <!-- 投票記錄區 -->
+                    <div class="vote-history" id="voteHistory">
+                        <h4>投票記錄</h4>
+                        <div class="vote-records" id="voteRecords"></div>
+                    </div>
                 </div>
             </div>
         </div>

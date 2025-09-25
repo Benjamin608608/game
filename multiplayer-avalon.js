@@ -288,6 +288,11 @@ class MultiplayerAvalonGame {
             this.hideAllVotingSections();
             this.showMessage(data.message, data.success ? 'success' : 'error');
             
+            // 顯示投票詳情
+            if (data.voteDetails) {
+                this.displayVoteDetails(data.voteDetails);
+            }
+            
             // 更新任務軌道顯示
             this.updateMissionDisplay();
             
@@ -1571,6 +1576,59 @@ class MultiplayerAvalonGame {
             12: [3, 4, 4, 5, 5]
         };
         return missionConfigs[playerCount] ? missionConfigs[playerCount][mission - 1] : 3;
+    }
+
+    // 顯示投票詳情
+    displayVoteDetails(voteDetails) {
+        const voteRecords = document.getElementById('voteRecords');
+        if (!voteRecords) return;
+
+        const voteRecord = document.createElement('div');
+        voteRecord.className = `vote-record ${voteDetails.type}-vote`;
+        
+        let content = '';
+        
+        if (voteDetails.type === 'team') {
+            content = `
+                <h5>任務 ${voteDetails.mission} - 隊伍投票</h5>
+                <div class="voters-list">
+                    <strong>贊成：</strong>
+                    ${voteDetails.approveVoters.map(name => 
+                        `<span class="voter-item voter-approve">${name}</span>`
+                    ).join('')}
+                </div>
+                <div class="voters-list">
+                    <strong>反對：</strong>
+                    ${voteDetails.rejectVoters.map(name => 
+                        `<span class="voter-item voter-reject">${name}</span>`
+                    ).join('')}
+                </div>
+            `;
+        } else if (voteDetails.type === 'mission') {
+            content = `
+                <h5>任務 ${voteDetails.mission} - 任務執行</h5>
+                <div class="voters-list">
+                    <strong>成功：</strong>
+                    ${voteDetails.successVoters.map(name => 
+                        `<span class="voter-item voter-success">${name}</span>`
+                    ).join('')}
+                </div>
+                <div class="voters-list">
+                    <strong>失敗：</strong>
+                    ${voteDetails.failVoters.map(name => 
+                        `<span class="voter-item voter-fail">${name}</span>`
+                    ).join('')}
+                </div>
+            `;
+        }
+        
+        voteRecord.innerHTML = content;
+        voteRecords.insertBefore(voteRecord, voteRecords.firstChild); // 新記錄顯示在最上面
+        
+        // 限制記錄數量，避免界面過長
+        while (voteRecords.children.length > 10) {
+            voteRecords.removeChild(voteRecords.lastChild);
+        }
     }
 }
 

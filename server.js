@@ -245,11 +245,21 @@ function processTeamVoteResult(room, io) {
     const totalVotes = room.gameData.votes.length;
     const approved = rejectCount < totalVotes / 2; // 反對票少於一半才通過（一半或以上反對就拒絕）
     
+    // 整理投票詳情
+    const approveVoters = room.gameData.votes.filter(v => v.vote).map(v => v.playerName);
+    const rejectVoters = room.gameData.votes.filter(v => !v.vote).map(v => v.playerName);
+    
     const resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${rejectCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！（反對票 ≥ 一半）'}`;
     
     io.to(room.id).emit('voteResult', {
         message: resultMessage,
-        success: approved
+        success: approved,
+        voteDetails: {
+            type: 'team',
+            approveVoters: approveVoters,
+            rejectVoters: rejectVoters,
+            mission: room.gameData.currentMission
+        }
     });
     
     if (approved) {
@@ -308,11 +318,21 @@ function processMissionVoteResult(room, io) {
     const requiredFails = config.failsRequired[room.gameData.currentMission - 1];
     const missionSuccess = failCount < requiredFails;
     
+    // 整理任務投票詳情
+    const successVoters = room.gameData.votes.filter(v => v.vote).map(v => v.playerName);
+    const failVoters = room.gameData.votes.filter(v => !v.vote).map(v => v.playerName);
+    
     const resultMessage = `任務 ${room.gameData.currentMission} 結果：\n失敗票數：${failCount}\n需要失敗票數：${requiredFails}\n${missionSuccess ? '✅ 任務成功！' : '❌ 任務失敗！'}`;
     
     io.to(room.id).emit('voteResult', {
         message: resultMessage,
-        success: missionSuccess
+        success: missionSuccess,
+        voteDetails: {
+            type: 'mission',
+            successVoters: successVoters,
+            failVoters: failVoters,
+            mission: room.gameData.currentMission
+        }
     });
     
     room.gameData.missionResults.push(missionSuccess);
