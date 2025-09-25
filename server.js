@@ -258,14 +258,12 @@ function processTeamVoteResult(room, io) {
         room.gameData.consecutiveRejects = 0;
         
         // 通知被選中的隊員進行任務投票
-        const teamMembers = room.gameData.selectedPlayers.map(playerId => {
+        const teamMemberNames = room.gameData.selectedPlayers.map(playerId => {
             const player = room.players.get(playerId);
             return player ? player.name : '';
         }).filter(name => name);
         
-        io.to(room.id).emit('missionVotingStart', {
-            teamSize: room.gameData.selectedPlayers.length
-        });
+        startMissionVoting(room, io, teamMemberNames);
         
     } else {
         // 隊伍被拒絕
@@ -387,11 +385,12 @@ function startLakeLady(room, io) {
 
 // 湖中女神後繼續遊戲
 function continueGameAfterLakeLady(room, io) {
-    // 轉移湖中女神給被查看的玩家（如果還有後續任務）
+    // 湖中女神已經在lakeLadySelect中傳遞給被查驗的玩家
     nextMission(room, io);
     
-    // 獲取新隊長信息
+    // 獲取新隊長和新湖中女神持有者信息
     const newLeaderPlayer = room.players.get(room.gameData.currentLeader);
+    const newLakeLadyPlayer = room.players.get(room.gameData.lakeLadyHolder);
     
     // 通知遊戲狀態更新
     setTimeout(() => {
@@ -399,7 +398,9 @@ function continueGameAfterLakeLady(room, io) {
             currentPhase: 'teamSelection',
             currentMission: room.gameData.currentMission,
             currentLeader: room.gameData.currentLeader,
-            leaderName: newLeaderPlayer.name
+            leaderName: newLeaderPlayer.name,
+            lakeLadyHolder: room.gameData.lakeLadyHolder,
+            lakeLadyHolderName: newLakeLadyPlayer.name
         });
     }, 2000);
 }
@@ -796,7 +797,11 @@ io.on('connection', (socket) => {
             isEvil: null // 其他玩家不知道結果
         });
         
+        // 將湖中女神傳遞給被查驗的玩家
+        room.gameData.lakeLadyHolder = targetPlayer.id;
         room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
+        
+        console.log(`湖中女神從 ${playerInfo.playerName} 傳遞給 ${targetName}`);
     });
 
     // 更新玩家順序
@@ -917,6 +922,17 @@ io.on('connection', (socket) => {
         
         // 通知所有玩家開始隊伍投票
         io.to(roomCode).emit('teamVotingStart', {
+            teamMembers: teamMemberNames
+        });
+        
+        console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')}`);
+    });
+
+    // 確認隊伍投票通過，開始任務投票
+    function startMissionVoting(room, io, teamMemberNames) {
+        // 通知被選中的隊員進行任務投票
+        io.to(room.id).emit('missionVotingStart', {
+            teamSize: room.gameData.selectedPlayers.length,
             teamMembers: teamMemberNames
         });
         

@@ -310,6 +310,11 @@ class MultiplayerAvalonGame {
                 this.gameData.currentMission = data.currentMission;
                 this.gameData.currentLeader = data.currentLeader;
                 
+                // 更新湖中女神持有者
+                if (data.lakeLadyHolder) {
+                    this.gameData.lakeLadyHolder = data.lakeLadyHolder;
+                }
+                
                 // 清空選擇狀態
                 this.selectedTeam = [];
                 this.currentVote = null;
@@ -320,7 +325,11 @@ class MultiplayerAvalonGame {
                 this.updateOtherPlayers();
                 this.updateTeamDisplay();
                 
-                this.showMessage(`任務 ${data.currentMission} 開始！隊長：${data.leaderName}`, 'success');
+                let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
+                if (data.lakeLadyHolderName) {
+                    message += `，湖中女神：${data.lakeLadyHolderName}`;
+                }
+                this.showMessage(message, 'success');
             }
         });
 
@@ -1209,6 +1218,8 @@ class MultiplayerAvalonGame {
         document.getElementById('missionVotingSection').style.display = 'block';
         
         this.currentVote = null; // 重置投票狀態
+        
+        this.showMessage('你是被選中的隊員！請決定任務結果', 'info');
     }
 
     // 顯示湖中女神界面
