@@ -164,6 +164,7 @@ class MultiplayerAvalonGame {
         this.socket.on('playerJoined', (data) => {
             this.allPlayers = data.players;
             this.updatePlayersList();
+            this.updateLobbyButtons(); // 更新按鈕狀態
             this.showMessage(`${data.newPlayer} 加入了遊戲`, 'success');
         });
 
@@ -171,6 +172,7 @@ class MultiplayerAvalonGame {
         this.socket.on('playerLeft', (data) => {
             this.allPlayers = data.players;
             this.updatePlayersList();
+            this.updateLobbyButtons(); // 更新按鈕狀態
             this.showMessage(`${data.playerName} 離開了遊戲`, 'warning');
         });
 
@@ -182,6 +184,7 @@ class MultiplayerAvalonGame {
                 isHost: player.id === data.newHostId
             }));
             this.updatePlayersList();
+            this.updateLobbyButtons(); // 更新按鈕狀態
             this.showMessage(`${data.newHostName} 成為新的房主`, 'success');
         });
 
@@ -467,8 +470,11 @@ class MultiplayerAvalonGame {
         this.showScreen('lobbyScreen');
         document.getElementById('currentRoomCode').textContent = this.roomCode;
         this.updatePlayersList();
+        this.updateLobbyButtons();
+    }
 
-        // 顯示/隱藏開始遊戲按鈕
+    // 更新大廳按鈕狀態
+    updateLobbyButtons() {
         const startBtn = document.getElementById('startGameBtn');
         const roleSelectionBtn = document.getElementById('roleSelectionBtn');
         const waitingMsg = document.getElementById('waitingMessage');
