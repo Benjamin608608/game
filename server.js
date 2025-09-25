@@ -264,7 +264,9 @@ function processTeamVoteResult(room, io) {
             return player ? player.name : '';
         }).filter(name => name);
         
-        // 通知被選中的隊員進行任務投票
+        console.log(`開始任務投票，隊員：${teamMemberNames.join(', ')}`);
+        
+        // 通知所有玩家任務投票開始，但只有隊員能投票
         io.to(room.id).emit('missionVotingStart', {
             teamSize: room.gameData.selectedPlayers.length,
             teamMembers: teamMemberNames
