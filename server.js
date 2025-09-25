@@ -282,6 +282,17 @@ function processTeamVoteResult(room, io) {
         room.gameData.currentPhase = 'teamSelection';
         room.gameData.selectedPlayers = [];
         room.gameData.votes = [];
+        
+        // 通知新隊長選擇
+        const newLeaderPlayer = room.players.get(room.gameData.currentLeader);
+        setTimeout(() => {
+            io.to(roomCode).emit('gameStateUpdate', {
+                currentPhase: 'teamSelection',
+                currentMission: room.gameData.currentMission,
+                currentLeader: room.gameData.currentLeader,
+                leaderName: newLeaderPlayer.name
+            });
+        }, 2000);
     }
 }
 
@@ -331,17 +342,21 @@ function processMissionVoteResult(room, io) {
     if (shouldUseLakeLady(room)) {
         startLakeLady(room, io);
     } else {
-        // 準備下一個任務，通知下一個隊長
-        const nextLeaderInfo = prepareNextMission(room, io);
-        
-        io.to(room.id).emit('voteResult', {
-            message: resultMessage,
-            success: missionSuccess,
-            nextLeader: nextLeaderInfo.leaderName,
-            nextMission: room.gameData.currentMission + 1
-        });
-        
+        // 準備下一個任務並輪換隊長
         nextMission(room, io);
+        
+        // 獲取新隊長信息
+        const newLeaderPlayer = room.players.get(room.gameData.currentLeader);
+        
+        // 通知遊戲狀態更新
+        setTimeout(() => {
+            io.to(room.id).emit('gameStateUpdate', {
+                currentPhase: 'teamSelection',
+                currentMission: room.gameData.currentMission,
+                currentLeader: room.gameData.currentLeader,
+                leaderName: newLeaderPlayer.name
+            });
+        }, 3000); // 3秒後開始下一輪
     }
 }
 
@@ -372,9 +387,21 @@ function startLakeLady(room, io) {
 
 // 湖中女神後繼續遊戲
 function continueGameAfterLakeLady(room, io) {
-    // 將湖中女神轉移給被查看的玩家（如果還有後續任務）
-    // 這裡先保持原持有者，具體轉移邏輯可以後續完善
+    // 轉移湖中女神給被查看的玩家（如果還有後續任務）
     nextMission(room, io);
+    
+    // 獲取新隊長信息
+    const newLeaderPlayer = room.players.get(room.gameData.currentLeader);
+    
+    // 通知遊戲狀態更新
+    setTimeout(() => {
+        io.to(room.id).emit('gameStateUpdate', {
+            currentPhase: 'teamSelection',
+            currentMission: room.gameData.currentMission,
+            currentLeader: room.gameData.currentLeader,
+            leaderName: newLeaderPlayer.name
+        });
+    }, 2000);
 }
 
 // 下一個任務
@@ -424,6 +451,69 @@ function endGame(room, io, goodWins, message) {
 // Socket.IO 連接處理
 io.on('connection', (socket) => {
     console.log('玩家連接:', socket.id);
+
+    // 重連處理
+    socket.on('reconnect', (data) => {
+        const { playerName, roomCode } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room) {
+            socket.emit('error', { message: '房間不存在，可能已結束' });
+            return;
+        }
+        
+        // 檢查玩家是否在房間中
+        const existingPlayer = Array.from(room.players.values()).find(p => p.name === playerName);
+        if (!existingPlayer) {
+            socket.emit('error', { message: '您不在此房間中' });
+            return;
+        }
+        
+        // 更新玩家連接ID
+        room.players.delete(existingPlayer.id);
+        existingPlayer.id = socket.id;
+        room.players.set(socket.id, existingPlayer);
+        
+        // 更新玩家映射
+        players.set(socket.id, { roomCode, playerName });
+        
+        // 如果是房主，更新房主ID
+        if (existingPlayer.isHost) {
+            room.hostId = socket.id;
+        }
+        
+        // 重新加入房間
+        socket.join(roomCode);
+        
+        if (room.gameState === 'playing') {
+            // 遊戲進行中，發送當前遊戲狀態
+            const roleInfo = getRoleSpecificInfo(existingPlayer, Array.from(room.players.values()), room.gameData.showMordredIdentity);
+            
+            socket.emit('gameReconnected', {
+                playerInfo: {
+                    name: existingPlayer.name,
+                    role: existingPlayer.role,
+                    isEvil: existingPlayer.isEvil,
+                    specialInfo: roleInfo
+                },
+                gameData: room.gameData,
+                allPlayers: Array.from(room.players.values()).map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    isHost: p.isHost
+                }))
+            });
+        } else {
+            // 遊戲未開始，回到大廳
+            socket.emit('roomReconnected', {
+                roomCode,
+                isHost: existingPlayer.isHost,
+                players: Array.from(room.players.values())
+            });
+        }
+        
+        console.log(`${playerName} 重新連接到房間 ${roomCode}`);
+    });
 
     // 創建房間
     socket.on('createRoom', (data) => {
@@ -855,31 +945,43 @@ io.on('connection', (socket) => {
         if (playerInfo) {
             const room = rooms.get(playerInfo.roomCode);
             if (room) {
-                room.players.delete(socket.id);
+                // 不立即刪除玩家，給予重連機會
+                console.log(`玩家 ${playerInfo.playerName} 斷線，保留30秒重連時間`);
                 
-                // 如果房主離開且還有其他玩家，轉移房主權限
-                if (room.hostId === socket.id && room.players.size > 0) {
-                    const newHost = room.players.values().next().value;
-                    newHost.isHost = true;
-                    room.hostId = newHost.id;
-                    
-                    io.to(playerInfo.roomCode).emit('hostChanged', {
-                        newHostId: newHost.id,
-                        newHostName: newHost.name
-                    });
-                }
+                // 30秒後如果沒有重連，才真正移除玩家
+                setTimeout(() => {
+                    const currentRoom = rooms.get(playerInfo.roomCode);
+                    if (currentRoom && currentRoom.players.has(socket.id)) {
+                        // 玩家沒有重連，移除玩家
+                        currentRoom.players.delete(socket.id);
+                        
+                        // 如果房主離開且還有其他玩家，轉移房主權限
+                        if (currentRoom.hostId === socket.id && currentRoom.players.size > 0) {
+                            const newHost = currentRoom.players.values().next().value;
+                            newHost.isHost = true;
+                            currentRoom.hostId = newHost.id;
+                            
+                            io.to(playerInfo.roomCode).emit('hostChanged', {
+                                newHostId: newHost.id,
+                                newHostName: newHost.name
+                            });
+                        }
 
-                // 通知其他玩家
-                io.to(playerInfo.roomCode).emit('playerLeft', {
-                    playerId: socket.id,
-                    playerName: playerInfo.playerName,
-                    players: Array.from(room.players.values())
-                });
+                        // 通知其他玩家
+                        io.to(playerInfo.roomCode).emit('playerLeft', {
+                            playerId: socket.id,
+                            playerName: playerInfo.playerName,
+                            players: Array.from(currentRoom.players.values())
+                        });
 
-                // 如果房間空了，刪除房間
-                if (room.players.size === 0) {
-                    rooms.delete(playerInfo.roomCode);
-                }
+                        // 如果房間空了，刪除房間
+                        if (currentRoom.players.size === 0) {
+                            rooms.delete(playerInfo.roomCode);
+                        }
+                        
+                        console.log(`玩家 ${playerInfo.playerName} 重連超時，已移除`);
+                    }
+                }, 30000); // 30秒重連時間
             }
             players.delete(socket.id);
         }

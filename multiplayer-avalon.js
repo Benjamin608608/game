@@ -20,6 +20,7 @@ class MultiplayerAvalonGame {
 
         this.initializeEventListeners();
         this.initializeSocketListeners();
+        this.initializeReconnection();
     }
 
     // 初始化界面事件監聽器
@@ -302,6 +303,44 @@ class MultiplayerAvalonGame {
             }
         });
 
+        // 遊戲狀態更新
+        this.socket.on('gameStateUpdate', (data) => {
+            if (this.gameData) {
+                this.gameData.currentPhase = data.currentPhase;
+                this.gameData.currentMission = data.currentMission;
+                this.gameData.currentLeader = data.currentLeader;
+                
+                // 清空選擇狀態
+                this.selectedTeam = [];
+                this.currentVote = null;
+                
+                // 更新界面
+                this.hideAllVotingSections();
+                this.updateGameStatus();
+                this.updateOtherPlayers();
+                this.updateTeamDisplay();
+                
+                this.showMessage(`任務 ${data.currentMission} 開始！隊長：${data.leaderName}`, 'success');
+            }
+        });
+
+        // 重連相關事件
+        this.socket.on('gameReconnected', (data) => {
+            this.playerRole = data.playerInfo;
+            this.gameData = data.gameData;
+            this.allPlayers = data.allPlayers;
+            this.showGameScreen();
+            this.showMessage('重新連接成功！', 'success');
+        });
+
+        this.socket.on('roomReconnected', (data) => {
+            this.roomCode = data.roomCode;
+            this.isHost = data.isHost;
+            this.allPlayers = data.players;
+            this.showLobby();
+            this.showMessage('重新連接到房間！', 'success');
+        });
+
         // 湖中女神事件
         this.socket.on('lakeLadyStart', (data) => {
             if (data.holderName === this.playerName) {
@@ -336,7 +375,49 @@ class MultiplayerAvalonGame {
 
         this.socket.on('reconnect', () => {
             this.showMessage('重新連接成功', 'success');
+            this.attemptReconnection();
         });
+    }
+
+    // 初始化重連機制
+    initializeReconnection() {
+        // 保存遊戲狀態到localStorage
+        window.addEventListener('beforeunload', () => {
+            if (this.playerName && this.roomCode) {
+                localStorage.setItem('avalon_player_name', this.playerName);
+                localStorage.setItem('avalon_room_code', this.roomCode);
+                localStorage.setItem('avalon_is_host', this.isHost.toString());
+            }
+        });
+
+        // 頁面載入時嘗試重連
+        this.attemptReconnection();
+    }
+
+    // 嘗試重新連接
+    attemptReconnection() {
+        const savedPlayerName = localStorage.getItem('avalon_player_name');
+        const savedRoomCode = localStorage.getItem('avalon_room_code');
+        
+        if (savedPlayerName && savedRoomCode && this.currentScreen === 'nameScreen') {
+            this.playerName = savedPlayerName;
+            this.roomCode = savedRoomCode;
+            
+            // 嘗試重連
+            this.socket.emit('reconnect', {
+                playerName: savedPlayerName,
+                roomCode: savedRoomCode
+            });
+            
+            this.showMessage('嘗試重新連接...', 'info');
+        }
+    }
+
+    // 清理保存的連接信息
+    clearConnectionInfo() {
+        localStorage.removeItem('avalon_player_name');
+        localStorage.removeItem('avalon_room_code');
+        localStorage.removeItem('avalon_is_host');
     }
 
     // 確認玩家名稱
@@ -393,6 +474,7 @@ class MultiplayerAvalonGame {
     // 離開房間
     leaveRoom() {
         if (confirm('確定要離開房間嗎？')) {
+            this.clearConnectionInfo(); // 清理重連信息
             this.socket.disconnect();
             location.reload();
         }
@@ -914,10 +996,17 @@ class MultiplayerAvalonGame {
                 phaseElement.textContent = '抽選隊長';
                 statusElement.textContent = '正在抽選第一個隊長...';
                 break;
-                case 'teamSelection':
-                    phaseElement.textContent = `任務 ${this.gameData.currentMission} - 選擇隊伍`;
-                    statusElement.textContent = '隊長正在選擇執行任務的隊員';
-                    break;
+        case 'teamSelection':
+            const currentLeaderPlayer = this.allPlayers.find(p => p.id === this.gameData.currentLeader);
+            phaseElement.textContent = `任務 ${this.gameData.currentMission} - 選擇隊伍`;
+            
+            if (currentLeaderPlayer?.name === this.playerName) {
+                statusElement.textContent = '🎯 你是隊長！請選擇執行任務的隊員';
+                this.updateTeamDisplay(); // 確保隊長看到選擇界面
+            } else {
+                statusElement.textContent = `隊長 ${currentLeaderPlayer?.name} 正在選擇執行任務的隊員`;
+            }
+            break;
                 case 'teamVote':
                     phaseElement.textContent = `任務 ${this.gameData.currentMission} - 投票階段`;
                     statusElement.textContent = '所有玩家對隊伍組成進行投票';
