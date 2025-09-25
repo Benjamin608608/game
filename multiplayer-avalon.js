@@ -290,23 +290,36 @@ class MultiplayerAvalonGame {
         const roleElement = document.getElementById('myRole');
         const roleInfoElement = document.getElementById('roleInfo');
         
-        if (this.playerRole) {
+        if (this.playerRole && this.playerRole.specialInfo) {
             roleElement.textContent = this.playerRole.role;
             roleElement.className = `role-display ${this.playerRole.isEvil ? 'role-evil' : 'role-good'}`;
             
-            // 簡單的角色說明
-            const roleDescriptions = {
-                '梅林': '🧙‍♂️ 知道邪惡角色（除莫德雷德），但要隱藏身份',
-                '佩西瓦爾': '🛡️ 知道梅林和摩甘娜，保護真正的梅林',
-                '亞瑟的忠臣': '⚡ 普通好人，努力完成任務',
-                '刺客': '🗡️ 破壞任務，最後可刺殺梅林',
-                '莫德雷德': '👑 隱形邪惡角色，梅林看不到你',
-                '摩甘娜': '🔮 偽裝梅林，混淆佩西瓦爾',
-                '奧伯倫': '🌙 獨立邪惡角色，其他邪惡角色不知道你',
-                '爪牙': '⚔️ 普通邪惡角色，破壞任務'
-            };
+            // 顯示角色特殊資訊
+            let infoHTML = `<div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 10px 0;">`;
             
-            roleInfoElement.textContent = roleDescriptions[this.playerRole.role] || '';
+            // 特殊知識
+            if (this.playerRole.specialInfo.specialKnowledge) {
+                infoHTML += `<h4>🔍 特殊資訊</h4><p>${this.playerRole.specialInfo.specialKnowledge}</p>`;
+            }
+            
+            // 已知玩家列表
+            if (this.playerRole.specialInfo.knownPlayers && this.playerRole.specialInfo.knownPlayers.length > 0) {
+                infoHTML += `<h4>👥 已知身份</h4><ul style="list-style: none; padding: 0;">`;
+                this.playerRole.specialInfo.knownPlayers.forEach(player => {
+                    infoHTML += `<li style="background: rgba(255,255,255,0.1); margin: 5px 0; padding: 8px; border-radius: 4px;">
+                        <strong>${player.name}</strong> - ${player.info}
+                    </li>`;
+                });
+                infoHTML += `</ul>`;
+            }
+            
+            // 指示說明
+            if (this.playerRole.specialInfo.instructions) {
+                infoHTML += `<h4>📋 遊戲提示</h4><p style="font-style: italic; color: #ffd700;">${this.playerRole.specialInfo.instructions}</p>`;
+            }
+            
+            infoHTML += `</div>`;
+            roleInfoElement.innerHTML = infoHTML;
         }
     }
 
@@ -344,14 +357,73 @@ class MultiplayerAvalonGame {
         otherPlayers.forEach(player => {
             const playerElement = document.createElement('div');
             playerElement.className = 'other-player';
-            playerElement.textContent = player.name;
             
-            if (player.isHost) {
-                playerElement.innerHTML += ' 👑';
+            // 根據當前玩家的角色顯示不同的視覺提示
+            let playerDisplayName = player.name;
+            let specialIndicator = '';
+            let specialClass = '';
+            
+            if (this.playerRole && this.playerRole.specialInfo && this.playerRole.specialInfo.knownPlayers) {
+                const knownPlayer = this.playerRole.specialInfo.knownPlayers.find(kp => kp.name === player.name);
+                if (knownPlayer) {
+                    if (knownPlayer.info.includes('邪惡')) {
+                        specialIndicator = ' 👹';
+                        specialClass = ' known-evil';
+                        playerElement.style.borderLeft = '4px solid #f44336';
+                        playerElement.style.background = 'rgba(244, 67, 54, 0.1)';
+                    } else if (knownPlayer.info.includes('梅林') || knownPlayer.info.includes('摩甘娜')) {
+                        specialIndicator = ' ✨';
+                        specialClass = ' known-magic';
+                        playerElement.style.borderLeft = '4px solid #9c27b0';
+                        playerElement.style.background = 'rgba(156, 39, 176, 0.1)';
+                    } else if (knownPlayer.info.includes('夥伴')) {
+                        specialIndicator = ' ⚔️';
+                        specialClass = ' known-ally';
+                        playerElement.style.borderLeft = '4px solid #ff5722';
+                        playerElement.style.background = 'rgba(255, 87, 34, 0.1)';
+                    }
+                    
+                    // 添加tooltip顯示詳細信息
+                    playerElement.title = knownPlayer.info;
+                }
             }
             
+            if (player.isHost) {
+                playerDisplayName += ' 👑';
+            }
+            
+            const knownPlayerInfo = this.playerRole && this.playerRole.specialInfo && this.playerRole.specialInfo.knownPlayers ? 
+                this.playerRole.specialInfo.knownPlayers.find(kp => kp.name === player.name) : null;
+            
+            playerElement.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>${playerDisplayName}${specialIndicator}</span>
+                    ${knownPlayerInfo ? `<small style="opacity: 0.7; font-size: 0.8em;">${knownPlayerInfo.info}</small>` : ''}
+                </div>
+            `;
+            
+            playerElement.className += specialClass;
             otherPlayersList.appendChild(playerElement);
         });
+        
+        // 如果沒有已知玩家，顯示提示
+        if (this.playerRole && this.playerRole.specialInfo && 
+            this.playerRole.specialInfo.knownPlayers && 
+            this.playerRole.specialInfo.knownPlayers.length === 0) {
+            
+            const noInfoElement = document.createElement('div');
+            noInfoElement.style.cssText = 'text-align: center; padding: 15px; opacity: 0.7; font-style: italic;';
+            
+            if (this.playerRole.role === '奧伯倫') {
+                noInfoElement.textContent = '你不知道任何其他角色的身份';
+            } else if (this.playerRole.role === '亞瑟的忠臣') {
+                noInfoElement.textContent = '觀察其他玩家的行為來推理身份';
+            }
+            
+            if (noInfoElement.textContent) {
+                otherPlayersList.appendChild(noInfoElement);
+            }
+        }
     }
 
     // 更新遊戲狀態
@@ -390,21 +462,68 @@ class MultiplayerAvalonGame {
 
     // 顯示角色詳情
     showRoleDetails() {
-        if (!this.playerRole) return;
+        if (!this.playerRole || !this.playerRole.specialInfo) return;
         
-        const roleInfos = {
-            '梅林': `🧙‍♂️ 梅林 (好人陣營)\n\n能力：知道所有邪惡角色（除了莫德雷德）\n注意：必須隱藏身份，避免被刺客發現！`,
-            '佩西瓦爾': `🛡️ 佩西瓦爾 (好人陣營)\n\n能力：知道梅林和摩甘娜，但不知道誰是誰\n任務：保護真正的梅林`,
-            '亞瑟的忠臣': `⚡ 亞瑟的忠臣 (好人陣營)\n\n能力：無特殊能力\n目標：完成任務，保護梅林`,
-            '刺客': `🗡️ 刺客 (邪惡陣營)\n\n能力：如果好人完成3個任務，可以刺殺梅林獲勝\n目標：破壞任務或找出梅林並刺殺`,
-            '莫德雷德': `👑 莫德雷德 (邪惡陣營)\n\n能力：梅林看不到你\n策略：利用隱身優勢，偽裝成好人`,
-            '摩甘娜': `🔮 摩甘娜 (邪惡陣營)\n\n能力：佩西瓦爾會看到你，以為你是梅林\n策略：混淆佩西瓦爾，偽裝成梅林`,
-            '奧伯倫': `🌙 奧伯倫 (邪惡陣營)\n\n特殊：其他邪惡角色不知道你的身份\n限制：你也不知道其他邪惡角色`,
-            '爪牙': `⚔️ 爪牙 (邪惡陣營)\n\n能力：知道其他邪惡角色（除了奧伯倫）\n目標：協助破壞任務`
-        };
-
-        const roleInfo = roleInfos[this.playerRole.role] || '未知角色';
-        alert(roleInfo);
+        let modalContent = `<div style="background: white; color: #333; padding: 30px; border-radius: 15px; max-width: 500px; max-height: 80vh; overflow-y: auto;">`;
+        
+        // 角色標題
+        const roleColor = this.playerRole.isEvil ? '#f44336' : '#4CAF50';
+        modalContent += `<h2 style="color: ${roleColor}; text-align: center; margin-bottom: 20px;">
+            ${this.playerRole.role} (${this.playerRole.isEvil ? '邪惡陣營' : '好人陣營'})
+        </h2>`;
+        
+        // 特殊知識
+        if (this.playerRole.specialInfo.specialKnowledge) {
+            modalContent += `<div style="background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3>🔍 特殊資訊</h3>
+                <p>${this.playerRole.specialInfo.specialKnowledge}</p>
+            </div>`;
+        }
+        
+        // 已知玩家
+        if (this.playerRole.specialInfo.knownPlayers && this.playerRole.specialInfo.knownPlayers.length > 0) {
+            modalContent += `<div style="background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3>👥 已知身份</h3>`;
+            
+            this.playerRole.specialInfo.knownPlayers.forEach(player => {
+                modalContent += `<div style="background: white; margin: 8px 0; padding: 10px; border-radius: 5px; border-left: 4px solid ${roleColor};">
+                    <strong>${player.name}</strong> - ${player.info}
+                </div>`;
+            });
+            
+            modalContent += `</div>`;
+        }
+        
+        // 遊戲指示
+        if (this.playerRole.specialInfo.instructions) {
+            modalContent += `<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3>📋 遊戲提示</h3>
+                <p style="font-style: italic;">${this.playerRole.specialInfo.instructions}</p>
+            </div>`;
+        }
+        
+        modalContent += `<button onclick="this.parentElement.parentElement.style.display='none'" 
+                        style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: block; margin: 20px auto 0;">
+                        確認
+                    </button></div>`;
+        
+        // 創建模態窗口
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
+            justify-content: center; align-items: center;
+        `;
+        modal.innerHTML = modalContent;
+        
+        // 點擊外部關閉
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        document.body.appendChild(modal);
     }
 
     // 處理遊戲動作

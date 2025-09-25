@@ -109,6 +109,81 @@ function isEvilRole(role) {
     return ['莫德雷德', '刺客', '摩甘娜', '爪牙', '奧伯倫'].includes(role);
 }
 
+// 獲取角色特定資訊
+function getRoleSpecificInfo(currentPlayer, allPlayers) {
+    const roleInfo = {
+        knownPlayers: [],
+        specialKnowledge: '',
+        instructions: ''
+    };
+
+    switch (currentPlayer.role) {
+        case '梅林':
+            // 梅林知道所有邪惡角色（除了莫德雷德）
+            roleInfo.knownPlayers = allPlayers
+                .filter(p => p.isEvil && p.role !== '莫德雷德' && p.id !== currentPlayer.id)
+                .map(p => ({ name: p.name, info: '邪惡角色' }));
+            roleInfo.specialKnowledge = `你知道以下邪惡角色：${roleInfo.knownPlayers.map(p => p.name).join(', ')}`;
+            roleInfo.instructions = '⚠️ 注意：莫德雷德對你是隐形的！必須隱藏身份避免被刺客發現！';
+            break;
+
+        case '佩西瓦爾':
+            // 佩西瓦爾看到梅林和摩甘娜，但不知道誰是誰
+            const merlinAndMorgana = allPlayers.filter(p => 
+                (p.role === '梅林' || p.role === '摩甘娜') && p.id !== currentPlayer.id
+            );
+            roleInfo.knownPlayers = merlinAndMorgana.map(p => ({ 
+                name: p.name, 
+                info: '梅林或摩甘娜' 
+            }));
+            roleInfo.specialKnowledge = `你看到以下法師：${roleInfo.knownPlayers.map(p => p.name).join(', ')}`;
+            roleInfo.instructions = '🔍 其中一個是梅林，另一個可能是摩甘娜。保護真正的梅林！';
+            break;
+
+        case '刺客':
+        case '莫德雷德':
+        case '摩甘娜':
+        case '爪牙':
+            // 邪惡角色（除了奧伯倫）彼此知道
+            roleInfo.knownPlayers = allPlayers
+                .filter(p => p.isEvil && p.role !== '奧伯倫' && p.id !== currentPlayer.id)
+                .map(p => ({ name: p.name, info: `邪惡夥伴 (${p.role})` }));
+            roleInfo.specialKnowledge = `你的邪惡夥伴：${roleInfo.knownPlayers.map(p => p.name).join(', ')}`;
+            
+            if (currentPlayer.role === '刺客') {
+                roleInfo.instructions = '🗡️ 破壞任務，如果好人完成3個任務，你可以刺殺梅林獲勝！';
+            } else if (currentPlayer.role === '莫德雷德') {
+                roleInfo.instructions = '👑 你對梅林是隐形的，利用這個優勢偽裝成好人！';
+            } else if (currentPlayer.role === '摩甘娜') {
+                roleInfo.instructions = '🔮 佩西瓦爾會看到你，以為你是梅林。混淆他的判斷！';
+            } else {
+                roleInfo.instructions = '⚔️ 協助破壞任務，隱藏身份！';
+            }
+            break;
+
+        case '奧伯倫':
+            // 奧伯倫不知道其他邪惡角色，其他邪惡角色也不知道奧伯倫
+            roleInfo.knownPlayers = [];
+            roleInfo.specialKnowledge = '你不知道其他邪惡角色的身份';
+            roleInfo.instructions = '🌙 獨立作戰！其他邪惡角色不知道你的身份，你也不知道他們。小心破壞任務！';
+            break;
+
+        case '亞瑟的忠臣':
+            // 普通好人沒有特殊資訊
+            roleInfo.knownPlayers = [];
+            roleInfo.specialKnowledge = '你沒有特殊能力';
+            roleInfo.instructions = '⚡ 觀察其他玩家的行為，推理出邪惡角色。保護梅林，完成任務！';
+            break;
+
+        default:
+            roleInfo.knownPlayers = [];
+            roleInfo.specialKnowledge = '未知角色';
+            roleInfo.instructions = '';
+    }
+
+    return roleInfo;
+}
+
 // Socket.IO 連接處理
 io.on('connection', (socket) => {
     console.log('玩家連接:', socket.id);
@@ -244,13 +319,16 @@ io.on('connection', (socket) => {
             consecutiveRejects: 0
         };
 
-        // 通知所有玩家遊戲開始
+        // 通知所有玩家遊戲開始，為每個角色提供相應的資訊
         room.players.forEach((player, socketId) => {
+            const roleInfo = getRoleSpecificInfo(player, playersArray);
+            
             io.to(socketId).emit('gameStarted', {
                 playerInfo: {
                     name: player.name,
                     role: player.role,
-                    isEvil: player.isEvil
+                    isEvil: player.isEvil,
+                    specialInfo: roleInfo
                 },
                 gameData: room.gameData,
                 allPlayers: playersArray.map(p => ({
