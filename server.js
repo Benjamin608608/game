@@ -184,6 +184,50 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
     return roleInfo;
 }
 
+// 驗證自定義角色配置
+function validateCustomRoles(roles) {
+    const requiredRoles = ['梅林', '刺客', '莫德雷德'];
+    const goodRoles = ['梅林', '佩西瓦爾', '亞瑟的忠臣'];
+    const evilRoles = ['刺客', '莫德雷德', '摩甘娜', '爪牙', '奧伯倫'];
+    
+    // 檢查必要角色
+    for (const required of requiredRoles) {
+        if (!roles.includes(required)) {
+            return { valid: false, message: `缺少必要角色：${required}` };
+        }
+    }
+    
+    // 檢查角色有效性
+    for (const role of roles) {
+        if (!goodRoles.includes(role) && !evilRoles.includes(role)) {
+            return { valid: false, message: `無效角色：${role}` };
+        }
+    }
+    
+    // 計算好壞人數量
+    const goodCount = roles.filter(role => goodRoles.includes(role)).length;
+    const evilCount = roles.filter(role => evilRoles.includes(role)).length;
+    
+    // 檢查陣營平衡
+    if (goodCount < 2 || evilCount < 2) {
+        return { valid: false, message: '好人和壞人陣營都至少需要2人' };
+    }
+    
+    if (Math.abs(goodCount - evilCount) > 2) {
+        return { valid: false, message: '好人和壞人數量差距不能超過2人' };
+    }
+    
+    // 檢查角色組合合理性
+    const hasMorgana = roles.includes('摩甘娜');
+    const hasPercival = roles.includes('佩西瓦爾');
+    
+    if (hasMorgana && !hasPercival) {
+        return { valid: false, message: '如果選擇摩甘娜，建議同時選擇佩西瓦爾以保持遊戲平衡' };
+    }
+    
+    return { valid: true };
+}
+
 // Socket.IO 連接處理
 io.on('connection', (socket) => {
     console.log('玩家連接:', socket.id);
@@ -283,7 +327,7 @@ io.on('connection', (socket) => {
 
     // 開始遊戲
     socket.on('startGame', (data) => {
-        const { roomCode } = data;
+        const { roomCode, useDefaultRoles, customRoles } = data;
         const room = rooms.get(roomCode);
 
         if (!room || room.hostId !== socket.id) {
@@ -298,7 +342,26 @@ io.on('connection', (socket) => {
         }
 
         // 分配角色
-        const roles = assignRoles(playerCount);
+        let roles;
+        if (useDefaultRoles) {
+            roles = assignRoles(playerCount);
+        } else {
+            // 驗證自定義角色
+            if (!customRoles || customRoles.length !== playerCount) {
+                socket.emit('error', { message: '自定義角色配置無效' });
+                return;
+            }
+            
+            // 驗證角色合理性
+            const validation = validateCustomRoles(customRoles);
+            if (!validation.valid) {
+                socket.emit('error', { message: validation.message });
+                return;
+            }
+            
+            roles = shuffleArray([...customRoles]);
+        }
+        
         const playersArray = Array.from(room.players.values());
         
         // 為每個玩家分配角色

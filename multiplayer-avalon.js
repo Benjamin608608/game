@@ -65,8 +65,42 @@ class MultiplayerAvalonGame {
             this.startGame();
         });
 
+        document.getElementById('roleSelectionBtn').addEventListener('click', () => {
+            this.showRoleSelection();
+        });
+
         document.getElementById('leaveRoomBtn').addEventListener('click', () => {
             this.leaveRoom();
+        });
+
+        // 角色選擇操作
+        document.getElementById('backToLobbyBtn').addEventListener('click', () => {
+            this.showScreen('lobbyScreen');
+        });
+
+        document.getElementById('confirmRoleSelectionBtn').addEventListener('click', () => {
+            this.startGameWithCustomRoles();
+        });
+
+        // 角色選擇計數器
+        document.getElementById('servants-plus').addEventListener('click', () => {
+            this.adjustRoleCount('servants', 1);
+        });
+        document.getElementById('servants-minus').addEventListener('click', () => {
+            this.adjustRoleCount('servants', -1);
+        });
+        document.getElementById('minions-plus').addEventListener('click', () => {
+            this.adjustRoleCount('minions', 1);
+        });
+        document.getElementById('minions-minus').addEventListener('click', () => {
+            this.adjustRoleCount('minions', -1);
+        });
+
+        // 角色複選框
+        ['percival', 'morgana', 'oberon'].forEach(role => {
+            document.getElementById(`role-${role}`).addEventListener('change', () => {
+                this.updateRoleCount();
+            });
         });
 
         // 遊戲中操作
@@ -220,7 +254,7 @@ class MultiplayerAvalonGame {
         }
     }
 
-    // 開始遊戲
+    // 開始遊戲（使用預設角色）
     startGame() {
         if (this.allPlayers.length < 6) {
             this.showMessage('至少需要6名玩家才能開始遊戲', 'error');
@@ -228,8 +262,143 @@ class MultiplayerAvalonGame {
         }
 
         this.socket.emit('startGame', {
-            roomCode: this.roomCode
+            roomCode: this.roomCode,
+            useDefaultRoles: true
         });
+    }
+
+    // 顯示角色選擇界面
+    showRoleSelection() {
+        if (this.allPlayers.length < 6) {
+            this.showMessage('至少需要6名玩家才能選擇角色', 'error');
+            return;
+        }
+
+        this.showScreen('roleSelectionScreen');
+        this.initializeRoleSelection();
+    }
+
+    // 初始化角色選擇
+    initializeRoleSelection() {
+        // 重置所有選項
+        document.getElementById('servants-count').textContent = '0';
+        document.getElementById('minions-count').textContent = '0';
+        document.getElementById('role-percival').checked = false;
+        document.getElementById('role-morgana').checked = false;
+        document.getElementById('role-oberon').checked = false;
+        
+        this.updateRoleCount();
+    }
+
+    // 調整角色數量
+    adjustRoleCount(roleType, change) {
+        const countElement = document.getElementById(`${roleType}-count`);
+        let currentCount = parseInt(countElement.textContent);
+        const newCount = Math.max(0, currentCount + change);
+        
+        // 限制最大數量
+        const maxCount = roleType === 'servants' ? 6 : 4;
+        if (newCount <= maxCount) {
+            countElement.textContent = newCount;
+            this.updateRoleCount();
+        }
+    }
+
+    // 更新角色計數和驗證
+    updateRoleCount() {
+        const playerCount = this.allPlayers.length;
+        
+        // 固定角色（必選）
+        let goodCount = 1; // 梅林
+        let evilCount = 2; // 刺客 + 莫德雷德
+        
+        // 可選角色
+        if (document.getElementById('role-percival').checked) goodCount++;
+        if (document.getElementById('role-morgana').checked) evilCount++;
+        if (document.getElementById('role-oberon').checked) evilCount++;
+        
+        // 普通角色
+        const servantsCount = parseInt(document.getElementById('servants-count').textContent);
+        const minionsCount = parseInt(document.getElementById('minions-count').textContent);
+        
+        goodCount += servantsCount;
+        evilCount += minionsCount;
+        
+        const totalCount = goodCount + evilCount;
+        
+        // 更新顯示
+        document.getElementById('goodCount').textContent = goodCount;
+        document.getElementById('evilCount').textContent = evilCount;
+        document.getElementById('finalGoodCount').textContent = goodCount;
+        document.getElementById('finalEvilCount').textContent = evilCount;
+        document.getElementById('totalSelectedRoles').textContent = totalCount;
+        
+        // 驗證規則
+        const validationMsg = document.getElementById('roleValidationMessage');
+        const confirmBtn = document.getElementById('confirmRoleSelectionBtn');
+        
+        let isValid = true;
+        let message = '';
+        
+        if (totalCount !== playerCount) {
+            isValid = false;
+            message = `角色總數（${totalCount}）必須等於玩家數量（${playerCount}）`;
+        } else if (goodCount < 2 || evilCount < 2) {
+            isValid = false;
+            message = '好人和壞人陣營都至少需要2人';
+        } else if (Math.abs(goodCount - evilCount) > 2) {
+            isValid = false;
+            message = '好人和壞人數量差距不能超過2人';
+        } else if (document.getElementById('role-morgana').checked && !document.getElementById('role-percival').checked) {
+            isValid = false;
+            message = '如果選擇摩甘娜，建議同時選擇佩西瓦爾';
+        }
+        
+        if (isValid) {
+            validationMsg.classList.add('hidden');
+            confirmBtn.disabled = false;
+        } else {
+            validationMsg.classList.remove('hidden');
+            validationMsg.textContent = message;
+            confirmBtn.disabled = true;
+        }
+    }
+
+    // 使用自定義角色開始遊戲
+    startGameWithCustomRoles() {
+        const customRoles = this.getSelectedRoles();
+        
+        this.socket.emit('startGame', {
+            roomCode: this.roomCode,
+            useDefaultRoles: false,
+            customRoles: customRoles
+        });
+    }
+
+    // 獲取選中的角色列表
+    getSelectedRoles() {
+        const roles = [];
+        
+        // 固定角色
+        roles.push('梅林', '刺客', '莫德雷德');
+        
+        // 可選角色
+        if (document.getElementById('role-percival').checked) roles.push('佩西瓦爾');
+        if (document.getElementById('role-morgana').checked) roles.push('摩甘娜');
+        if (document.getElementById('role-oberon').checked) roles.push('奧伯倫');
+        
+        // 普通角色
+        const servantsCount = parseInt(document.getElementById('servants-count').textContent);
+        const minionsCount = parseInt(document.getElementById('minions-count').textContent);
+        
+        for (let i = 0; i < servantsCount; i++) {
+            roles.push('亞瑟的忠臣');
+        }
+        for (let i = 0; i < minionsCount; i++) {
+            roles.push('爪牙');
+        }
+        
+        return roles;
     }
 
     // 顯示等待大廳
@@ -240,13 +409,22 @@ class MultiplayerAvalonGame {
 
         // 顯示/隱藏開始遊戲按鈕
         const startBtn = document.getElementById('startGameBtn');
+        const roleSelectionBtn = document.getElementById('roleSelectionBtn');
         const waitingMsg = document.getElementById('waitingMessage');
         
         if (this.isHost) {
-            startBtn.classList.remove('hidden');
-            waitingMsg.textContent = `需要至少6名玩家才能開始（當前 ${this.allPlayers.length} 人）`;
+            if (this.allPlayers.length >= 6) {
+                startBtn.classList.remove('hidden');
+                roleSelectionBtn.classList.remove('hidden');
+                waitingMsg.textContent = '可以開始遊戲或自定義角色配置';
+            } else {
+                startBtn.classList.add('hidden');
+                roleSelectionBtn.classList.add('hidden');
+                waitingMsg.textContent = `需要至少6名玩家才能開始（當前 ${this.allPlayers.length} 人）`;
+            }
         } else {
             startBtn.classList.add('hidden');
+            roleSelectionBtn.classList.add('hidden');
             waitingMsg.textContent = '等待房主開始遊戲...';
         }
     }
