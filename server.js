@@ -77,7 +77,7 @@ function assignRoles(playerCount) {
     roleList.push('梅林');
     roleList.push('刺客');
     roleList.push('莫德雷德');
-    roleList.push('佩西瓦爾');
+    roleList.push('派希維爾');
 
     // 根據配置添加其他角色
     for (let i = 0; i < config.minions; i++) {
@@ -127,8 +127,8 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
             roleInfo.instructions = '⚠️ 注意：莫德雷德對你是隐形的！必須隱藏身份避免被刺客發現！';
             break;
 
-        case '佩西瓦爾':
-            // 佩西瓦爾看到梅林和摩甘娜，但不知道誰是誰
+        case '派希維爾':
+            // 派希維爾看到梅林和摩甘娜，但不知道誰是誰
             const merlinAndMorgana = allPlayers.filter(p => 
                 (p.role === '梅林' || p.role === '摩甘娜') && p.id !== currentPlayer.id
             );
@@ -155,7 +155,7 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
             } else if (currentPlayer.role === '莫德雷德') {
                 roleInfo.instructions = '👑 你對梅林是隐形的，利用這個優勢偽裝成好人！';
             } else if (currentPlayer.role === '摩甘娜') {
-                roleInfo.instructions = '🔮 佩西瓦爾會看到你，以為你是梅林。混淆他的判斷！';
+                roleInfo.instructions = '🔮 派希維爾會看到你，以為你是梅林。混淆他的判斷！';
             } else {
                 roleInfo.instructions = '⚔️ 協助破壞任務，隱藏身份！';
             }
@@ -187,7 +187,7 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
 // 驗證自定義角色配置
 function validateCustomRoles(roles) {
     const requiredRoles = ['梅林', '刺客', '莫德雷德'];
-    const goodRoles = ['梅林', '佩西瓦爾', '亞瑟的忠臣'];
+    const goodRoles = ['梅林', '派希維爾', '亞瑟的忠臣'];
     const evilRoles = ['刺客', '莫德雷德', '摩甘娜', '爪牙', '奧伯倫'];
     
     // 檢查必要角色
@@ -219,13 +219,169 @@ function validateCustomRoles(roles) {
     
     // 檢查角色組合合理性
     const hasMorgana = roles.includes('摩甘娜');
-    const hasPercival = roles.includes('佩西瓦爾');
+    const hasPercival = roles.includes('派希維爾');
     
     if (hasMorgana && !hasPercival) {
-        return { valid: false, message: '如果選擇摩甘娜，建議同時選擇佩西瓦爾以保持遊戲平衡' };
+        return { valid: false, message: '如果選擇摩甘娜，建議同時選擇派希維爾以保持遊戲平衡' };
     }
     
     return { valid: true };
+}
+
+// 處理隊伍投票結果
+function processTeamVoteResult(room, io) {
+    const approveCount = room.gameData.votes.filter(v => v.vote).length;
+    const totalVotes = room.gameData.votes.length;
+    const approved = approveCount > totalVotes / 2; // 嚴格大於一半
+    
+    const resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${totalVotes - approveCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！'}`;
+    
+    io.to(room.id).emit('voteResult', {
+        message: resultMessage,
+        success: approved
+    });
+    
+    if (approved) {
+        // 隊伍通過，開始任務投票
+        room.gameData.currentPhase = 'missionVote';
+        room.gameData.votes = [];
+        room.gameData.consecutiveRejects = 0;
+        
+        // 通知被選中的隊員進行任務投票
+        const teamMembers = room.gameData.selectedPlayers.map(playerId => {
+            const player = room.players.get(playerId);
+            return player ? player.name : '';
+        }).filter(name => name);
+        
+        io.to(room.id).emit('missionVotingStart', {
+            teamSize: room.gameData.selectedPlayers.length
+        });
+        
+    } else {
+        // 隊伍被拒絕
+        room.gameData.consecutiveRejects++;
+        
+        if (room.gameData.consecutiveRejects >= 5) {
+            // 連續5次拒絕，邪惡陣營勝利
+            endGame(room, io, false, '⚠️ 連續5次拒絕隊伍，邪惡陣營勝利！');
+            return;
+        }
+        
+        // 轉到下一個隊長
+        nextLeader(room);
+        room.gameData.currentPhase = 'teamSelection';
+        room.gameData.selectedPlayers = [];
+        room.gameData.votes = [];
+    }
+}
+
+// 處理任務投票結果
+function processMissionVoteResult(room, io) {
+    const failCount = room.gameData.votes.filter(v => !v.vote).length;
+    const config = getRoleConfiguration(room.players.size);
+    const requiredFails = config.failsRequired[room.gameData.currentMission - 1];
+    const missionSuccess = failCount < requiredFails;
+    
+    const resultMessage = `任務 ${room.gameData.currentMission} 結果：\n失敗票數：${failCount}\n需要失敗票數：${requiredFails}\n${missionSuccess ? '✅ 任務成功！' : '❌ 任務失敗！'}`;
+    
+    io.to(room.id).emit('voteResult', {
+        message: resultMessage,
+        success: missionSuccess
+    });
+    
+    room.gameData.missionResults.push(missionSuccess);
+    
+    if (missionSuccess) {
+        const successCount = room.gameData.missionResults.filter(r => r).length;
+        if (successCount >= 3) {
+            // 好人陣營完成3個任務，進入刺殺階段
+            io.to(room.id).emit('voteResult', {
+                message: '🎉 好人陣營完成了3個任務！\n⚔️ 進入刺殺階段...',
+                success: true
+            });
+            room.gameData.currentPhase = 'assassination';
+            return;
+        }
+    } else {
+        const failCount = room.gameData.missionResults.filter(r => !r).length;
+        if (failCount >= 3) {
+            // 邪惡陣營破壞3個任務，遊戲結束
+            endGame(room, io, false, '💀 邪惡陣營破壞了3個任務，邪惡陣營勝利！');
+            return;
+        }
+    }
+    
+    // 檢查是否需要湖中女神
+    if (shouldUseLakeLady(room)) {
+        startLakeLady(room, io);
+    } else {
+        nextMission(room, io);
+    }
+}
+
+// 檢查是否應該使用湖中女神
+function shouldUseLakeLady(room) {
+    if (!room.gameData.enableLakeLady) return false;
+    if (room.gameData.lakeLadyUsed.includes(room.gameData.currentMission)) return false;
+    
+    // 通常在任務2和任務3後使用湖中女神
+    return room.gameData.currentMission === 2 || room.gameData.currentMission === 3;
+}
+
+// 開始湖中女神階段
+function startLakeLady(room, io) {
+    room.gameData.currentPhase = 'lakeLady';
+    
+    // 選擇湖中女神持有者（通常是隨機或按規則選擇）
+    if (!room.gameData.lakeLadyHolder) {
+        const playersArray = Array.from(room.players.keys());
+        room.gameData.lakeLadyHolder = playersArray[Math.floor(Math.random() * playersArray.length)];
+    }
+    
+    const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
+    const availableTargets = Array.from(room.players.values())
+        .filter(p => p.id !== room.gameData.lakeLadyHolder)
+        .map(p => p.name);
+    
+    io.to(room.id).emit('lakeLadyStart', {
+        holderName: holderPlayer.name,
+        availableTargets: availableTargets
+    });
+}
+
+// 湖中女神後繼續遊戲
+function continueGameAfterLakeLady(room, io) {
+    nextMission(room, io);
+}
+
+// 下一個任務
+function nextMission(room, io) {
+    room.gameData.currentMission++;
+    nextLeader(room);
+    room.gameData.currentPhase = 'teamSelection';
+    room.gameData.selectedPlayers = [];
+    room.gameData.votes = [];
+}
+
+// 下一個隊長
+function nextLeader(room) {
+    const playersArray = Array.from(room.players.keys());
+    const currentIndex = playersArray.indexOf(room.gameData.currentLeader);
+    room.gameData.currentLeader = playersArray[(currentIndex + 1) % playersArray.length];
+}
+
+// 結束遊戲
+function endGame(room, io, goodWins, message) {
+    room.gameState = 'finished';
+    
+    io.to(room.id).emit('gameEnded', {
+        goodWins: goodWins,
+        message: message,
+        roles: Array.from(room.players.values()).map(p => ({
+            name: p.name,
+            role: p.role
+        }))
+    });
 }
 
 // Socket.IO 連接處理
@@ -327,7 +483,7 @@ io.on('connection', (socket) => {
 
     // 開始遊戲
     socket.on('startGame', (data) => {
-        const { roomCode, useDefaultRoles, customRoles } = data;
+        const { roomCode, useDefaultRoles, customRoles, enableLakeLady } = data;
         const room = rooms.get(roomCode);
 
         if (!room || room.hostId !== socket.id) {
@@ -379,7 +535,10 @@ io.on('connection', (socket) => {
             selectedPlayers: [],
             missionResults: [],
             votes: [],
-            consecutiveRejects: 0
+            consecutiveRejects: 0,
+            enableLakeLady: enableLakeLady !== false,
+            lakeLadyHolder: null,
+            lakeLadyUsed: []
         };
 
         // 通知所有玩家遊戲開始，為每個角色提供相應的資訊
@@ -405,6 +564,98 @@ io.on('connection', (socket) => {
         console.log(`房間 ${roomCode} 遊戲開始，${playerCount} 名玩家`);
     });
 
+    // 隊伍投票
+    socket.on('teamVote', (data) => {
+        const { roomCode, vote } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'teamVote') return;
+        
+        // 記錄投票
+        room.gameData.votes.push({ playerId: socket.id, vote });
+        
+        // 通知投票更新
+        io.to(roomCode).emit('voteUpdate', {
+            voteType: 'team',
+            currentCount: room.gameData.votes.length,
+            totalCount: room.players.size
+        });
+        
+        // 檢查是否所有人都投票了
+        if (room.gameData.votes.length === room.players.size) {
+            processTeamVoteResult(room, io);
+        }
+    });
+
+    // 任務投票
+    socket.on('missionVote', (data) => {
+        const { roomCode, vote } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'missionVote') return;
+        
+        // 檢查玩家是否在隊伍中
+        if (!room.gameData.selectedPlayers.includes(socket.id)) return;
+        
+        // 記錄投票
+        room.gameData.votes.push({ playerId: socket.id, vote });
+        
+        // 通知投票更新
+        io.to(roomCode).emit('voteUpdate', {
+            voteType: 'mission',
+            currentCount: room.gameData.votes.length,
+            totalCount: room.gameData.selectedPlayers.length
+        });
+        
+        // 檢查是否所有隊員都投票了
+        if (room.gameData.votes.length === room.gameData.selectedPlayers.length) {
+            processMissionVoteResult(room, io);
+        }
+    });
+
+    // 湖中女神選擇
+    socket.on('lakeLadySelect', (data) => {
+        const { roomCode, targetName } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'lakeLady') return;
+        if (room.gameData.lakeLadyHolder !== socket.id) return;
+        
+        const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetName);
+        if (!targetPlayer) return;
+        
+        // 發送結果給湖中女神持有者
+        io.to(socket.id).emit('lakeLadyResult', {
+            holderName: playerInfo.playerName,
+            targetName: targetName,
+            isEvil: targetPlayer.isEvil
+        });
+        
+        // 通知其他玩家
+        socket.broadcast.to(roomCode).emit('lakeLadyResult', {
+            holderName: playerInfo.playerName,
+            targetName: targetName,
+            isEvil: null // 其他玩家不知道結果
+        });
+        
+        room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
+    });
+
+    // 湖中女神確認
+    socket.on('lakeLadyConfirm', (data) => {
+        const { roomCode } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room || room.gameData.currentPhase !== 'lakeLady') return;
+        
+        // 轉移湖中女神給被查看的玩家（如果還有後續任務）
+        // 繼續遊戲流程
+        continueGameAfterLakeLady(room, io);
+    });
+
     // 遊戲動作處理
     socket.on('gameAction', (data) => {
         const playerInfo = players.get(socket.id);
@@ -413,8 +664,7 @@ io.on('connection', (socket) => {
         const room = rooms.get(playerInfo.roomCode);
         if (!room || room.gameState !== 'playing') return;
 
-        // 這裡處理各種遊戲動作，如投票、選擇隊員等
-        // 具體實現會在前端 JavaScript 中處理並同步
+        // 這裡處理各種遊戲動作，如選擇隊員等
         io.to(playerInfo.roomCode).emit('gameAction', {
             playerId: socket.id,
             playerName: playerInfo.playerName,

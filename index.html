@@ -520,6 +520,107 @@
             display: none !important;
         }
 
+        /* 投票界面樣式 */
+        .voting-section {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .voting-section h3 {
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+
+        .selected-team {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .selected-team .team-member {
+            display: inline-block;
+            background: rgba(76, 175, 80, 0.2);
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin: 5px;
+            border: 1px solid #4CAF50;
+        }
+
+        .vote-status {
+            margin-top: 15px;
+            font-size: 1.1em;
+            opacity: 0.8;
+        }
+
+        .vote-success {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .vote-success:hover {
+            background: #45a049;
+        }
+
+        .vote-fail {
+            background: #f44336;
+            color: white;
+        }
+
+        .vote-fail:hover {
+            background: #d32f2f;
+        }
+
+        /* 湖中女神樣式 */
+        .lake-lady-players {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .lake-lady-player {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .lake-lady-player:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: #2196F3;
+        }
+
+        .lake-lady-player.selected {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.2);
+        }
+
+        .lake-lady-result {
+            font-size: 1.5em;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+        }
+
+        .lake-lady-result.good {
+            background: rgba(76, 175, 80, 0.2);
+            border: 2px solid #4CAF50;
+            color: #4CAF50;
+        }
+
+        .lake-lady-result.evil {
+            background: rgba(244, 67, 54, 0.2);
+            border: 2px solid #f44336;
+            color: #f44336;
+        }
+
         /* 響應式設計 - 角色選擇 */
         @media (max-width: 768px) {
             .role-selection-container {
@@ -534,6 +635,10 @@
             
             .role-actions .btn {
                 max-width: none;
+            }
+            
+            .lake-lady-players {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
             }
         }
     </style>
@@ -626,8 +731,8 @@
                             <small>知道邪惡角色（除莫德雷德）</small>
                         </label>
                         <label class="role-checkbox">
-                            <input type="checkbox" id="role-percival" value="佩西瓦爾">
-                            <span class="role-name">🛡️ 佩西瓦爾</span>
+                            <input type="checkbox" id="role-percival" value="派希維爾">
+                            <span class="role-name">🛡️ 派希維爾</span>
                             <small>知道梅林和摩甘娜</small>
                         </label>
                         <div class="role-counter">
@@ -658,7 +763,7 @@
                         <label class="role-checkbox">
                             <input type="checkbox" id="role-morgana" value="摩甘娜">
                             <span class="role-name">🔮 摩甘娜</span>
-                            <small>佩西瓦爾會誤認為梅林</small>
+                            <small>派希維爾會誤認為梅林</small>
                         </label>
                         <label class="role-checkbox">
                             <input type="checkbox" id="role-oberon" value="奧伯倫">
@@ -688,6 +793,14 @@
                 </div>
                 <div id="roleValidationMessage" class="message error hidden">
                     請確保角色數量等於玩家數量，且好壞人比例合理
+                </div>
+                
+                <div class="lake-lady-option">
+                    <label class="role-checkbox">
+                        <input type="checkbox" id="enable-lake-lady" checked>
+                        <span class="role-name">🏔️ 啟用湖中女神</span>
+                        <small>任務2和3後可查看其他玩家身份</small>
+                    </label>
                 </div>
             </div>
 
@@ -739,6 +852,49 @@
 
                     <div id="gameActions">
                         <!-- 遊戲操作按鈕將動態生成 -->
+                    </div>
+
+                    <!-- 隊伍投票界面 -->
+                    <div class="voting-section" id="teamVotingSection" style="display: none;">
+                        <h3>隊伍組成投票</h3>
+                        <div class="selected-team" id="selectedTeam"></div>
+                        <div class="vote-buttons">
+                            <button class="vote-btn vote-approve" id="teamApproveBtn">贊成</button>
+                            <button class="vote-btn vote-reject" id="teamRejectBtn">反對</button>
+                        </div>
+                        <div class="vote-status" id="teamVoteStatus">
+                            等待所有玩家投票... (<span id="teamVoteCount">0</span>/<span id="totalPlayers">0</span>)
+                        </div>
+                    </div>
+
+                    <!-- 任務投票界面 -->
+                    <div class="voting-section" id="missionVotingSection" style="display: none;">
+                        <h3>任務執行</h3>
+                        <p>你是被選中執行任務的隊員，請決定任務結果：</p>
+                        <div class="vote-buttons">
+                            <button class="vote-btn vote-success" id="missionSuccessBtn">成功</button>
+                            <button class="vote-btn vote-fail" id="missionFailBtn">失敗</button>
+                        </div>
+                        <div class="vote-status" id="missionVoteStatus">
+                            等待所有隊員投票... (<span id="missionVoteCount">0</span>/<span id="missionTeamSize">0</span>)
+                        </div>
+                    </div>
+
+                    <!-- 湖中女神界面 -->
+                    <div class="voting-section" id="lakeLadySection" style="display: none;">
+                        <h3>🏔️ 湖中女神</h3>
+                        <p>你持有湖中女神卡，可以查看一名玩家的身份（好人/壞人）</p>
+                        <div class="lake-lady-players" id="lakeLadyPlayers"></div>
+                        <div class="vote-status" id="lakeLadyStatus">
+                            選擇一名玩家查看身份
+                        </div>
+                    </div>
+
+                    <!-- 湖中女神結果顯示 -->
+                    <div class="voting-section" id="lakeLadyResultSection" style="display: none;">
+                        <h3>🏔️ 湖中女神結果</h3>
+                        <div class="lake-lady-result" id="lakeLadyResult"></div>
+                        <button class="btn primary" id="lakeLadyConfirmBtn">確認並繼續</button>
                     </div>
                 </div>
 

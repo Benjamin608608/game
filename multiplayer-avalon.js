@@ -9,6 +9,11 @@ class MultiplayerAvalonGame {
         this.gameData = null;
         this.allPlayers = [];
         this.currentScreen = 'nameScreen';
+        this.selectedTeam = [];
+        this.currentVote = null;
+        this.lakeLadyTarget = null;
+        this.enableLakeLady = true;
+        this.lakeLadyHolder = null;
 
         this.initializeEventListeners();
         this.initializeSocketListeners();
@@ -103,6 +108,25 @@ class MultiplayerAvalonGame {
             });
         });
 
+        // 投票按鈕
+        document.getElementById('teamApproveBtn').addEventListener('click', () => {
+            this.voteForTeam(true);
+        });
+        document.getElementById('teamRejectBtn').addEventListener('click', () => {
+            this.voteForTeam(false);
+        });
+        document.getElementById('missionSuccessBtn').addEventListener('click', () => {
+            this.voteForMission(true);
+        });
+        document.getElementById('missionFailBtn').addEventListener('click', () => {
+            this.voteForMission(false);
+        });
+
+        // 湖中女神
+        document.getElementById('lakeLadyConfirmBtn').addEventListener('click', () => {
+            this.confirmLakeLady();
+        });
+
         // 遊戲中操作
         document.getElementById('viewRoleBtn').addEventListener('click', () => {
             this.showRoleDetails();
@@ -173,6 +197,41 @@ class MultiplayerAvalonGame {
         // 遊戲動作
         this.socket.on('gameAction', (data) => {
             this.handleGameAction(data);
+        });
+
+        // 投票相關事件
+        this.socket.on('teamVotingStart', (data) => {
+            this.showTeamVoting(data.teamMembers);
+        });
+
+        this.socket.on('missionVotingStart', (data) => {
+            this.showMissionVoting(data.teamSize);
+        });
+
+        this.socket.on('voteUpdate', (data) => {
+            this.updateVoteStatus(data.voteType, data.currentCount, data.totalCount);
+        });
+
+        this.socket.on('voteResult', (data) => {
+            this.hideAllVotingSections();
+            this.showMessage(data.message, data.success ? 'success' : 'error');
+        });
+
+        // 湖中女神事件
+        this.socket.on('lakeLadyStart', (data) => {
+            if (data.holderName === this.playerName) {
+                this.showLakeLady(data.availableTargets);
+            } else {
+                this.showMessage(`${data.holderName} 正在使用湖中女神...`, 'info');
+            }
+        });
+
+        this.socket.on('lakeLadyResult', (data) => {
+            if (data.holderName === this.playerName) {
+                this.showLakeLadyResult(data.targetName, data.isEvil);
+            } else {
+                this.showMessage(`${data.holderName} 查看了 ${data.targetName} 的身份`, 'info');
+            }
         });
 
         // 錯誤處理
@@ -351,7 +410,7 @@ class MultiplayerAvalonGame {
             message = '好人和壞人數量差距不能超過2人';
         } else if (document.getElementById('role-morgana').checked && !document.getElementById('role-percival').checked) {
             isValid = false;
-            message = '如果選擇摩甘娜，建議同時選擇佩西瓦爾';
+            message = '如果選擇摩甘娜，建議同時選擇派希維爾';
         }
         
         if (isValid) {
@@ -367,11 +426,13 @@ class MultiplayerAvalonGame {
     // 使用自定義角色開始遊戲
     startGameWithCustomRoles() {
         const customRoles = this.getSelectedRoles();
+        const enableLakeLady = document.getElementById('enable-lake-lady').checked;
         
         this.socket.emit('startGame', {
             roomCode: this.roomCode,
             useDefaultRoles: false,
-            customRoles: customRoles
+            customRoles: customRoles,
+            enableLakeLady: enableLakeLady
         });
     }
 
@@ -383,7 +444,7 @@ class MultiplayerAvalonGame {
         roles.push('梅林', '刺客', '莫德雷德');
         
         // 可選角色
-        if (document.getElementById('role-percival').checked) roles.push('佩西瓦爾');
+        if (document.getElementById('role-percival').checked) roles.push('派希維爾');
         if (document.getElementById('role-morgana').checked) roles.push('摩甘娜');
         if (document.getElementById('role-oberon').checked) roles.push('奧伯倫');
         
@@ -730,6 +791,144 @@ class MultiplayerAvalonGame {
         }, 5000);
     }
 
+    // 投票給隊伍
+    voteForTeam(approve) {
+        if (this.currentVote !== null) return; // 防止重複投票
+        
+        this.currentVote = approve;
+        this.socket.emit('teamVote', {
+            roomCode: this.roomCode,
+            vote: approve
+        });
+        
+        // 隱藏投票按鈕
+        document.getElementById('teamVotingSection').style.display = 'none';
+        this.showMessage(`你投了${approve ? '贊成' : '反對'}票`, 'success');
+    }
+
+    // 投票給任務
+    voteForMission(success) {
+        if (this.currentVote !== null) return; // 防止重複投票
+        
+        this.currentVote = success;
+        this.socket.emit('missionVote', {
+            roomCode: this.roomCode,
+            vote: success
+        });
+        
+        // 隱藏投票按鈕
+        document.getElementById('missionVotingSection').style.display = 'none';
+        this.showMessage(`你選擇了${success ? '成功' : '失敗'}`, 'success');
+    }
+
+    // 選擇湖中女神目標
+    selectLakeLadyTarget(targetName) {
+        this.lakeLadyTarget = targetName;
+        
+        // 更新界面選中狀態
+        document.querySelectorAll('.lake-lady-player').forEach(player => {
+            player.classList.remove('selected');
+        });
+        event.target.classList.add('selected');
+        
+        // 發送選擇
+        this.socket.emit('lakeLadySelect', {
+            roomCode: this.roomCode,
+            targetName: targetName
+        });
+    }
+
+    // 確認湖中女神結果
+    confirmLakeLady() {
+        document.getElementById('lakeLadyResultSection').style.display = 'none';
+        this.socket.emit('lakeLadyConfirm', {
+            roomCode: this.roomCode
+        });
+    }
+
+    // 顯示隊伍投票界面
+    showTeamVoting(teamMembers) {
+        this.hideAllVotingSections();
+        
+        const selectedTeamDiv = document.getElementById('selectedTeam');
+        selectedTeamDiv.innerHTML = '<h4>選定的隊伍成員：</h4>';
+        
+        teamMembers.forEach(memberName => {
+            const memberDiv = document.createElement('div');
+            memberDiv.className = 'team-member';
+            memberDiv.textContent = memberName;
+            selectedTeamDiv.appendChild(memberDiv);
+        });
+        
+        document.getElementById('totalPlayers').textContent = this.allPlayers.length;
+        document.getElementById('teamVoteCount').textContent = '0';
+        document.getElementById('teamVotingSection').style.display = 'block';
+        
+        this.currentVote = null; // 重置投票狀態
+    }
+
+    // 顯示任務投票界面
+    showMissionVoting(teamSize) {
+        this.hideAllVotingSections();
+        
+        document.getElementById('missionTeamSize').textContent = teamSize;
+        document.getElementById('missionVoteCount').textContent = '0';
+        document.getElementById('missionVotingSection').style.display = 'block';
+        
+        this.currentVote = null; // 重置投票狀態
+    }
+
+    // 顯示湖中女神界面
+    showLakeLady(availableTargets) {
+        this.hideAllVotingSections();
+        
+        const playersDiv = document.getElementById('lakeLadyPlayers');
+        playersDiv.innerHTML = '';
+        
+        availableTargets.forEach(playerName => {
+            const playerDiv = document.createElement('div');
+            playerDiv.className = 'lake-lady-player';
+            playerDiv.textContent = playerName;
+            playerDiv.addEventListener('click', () => {
+                this.selectLakeLadyTarget(playerName);
+            });
+            playersDiv.appendChild(playerDiv);
+        });
+        
+        document.getElementById('lakeLadySection').style.display = 'block';
+    }
+
+    // 顯示湖中女神結果
+    showLakeLadyResult(targetName, isEvil) {
+        this.hideAllVotingSections();
+        
+        const resultDiv = document.getElementById('lakeLadyResult');
+        resultDiv.className = `lake-lady-result ${isEvil ? 'evil' : 'good'}`;
+        resultDiv.innerHTML = `
+            <div><strong>${targetName}</strong></div>
+            <div>${isEvil ? '👹 邪惡陣營' : '😇 好人陣營'}</div>
+        `;
+        
+        document.getElementById('lakeLadyResultSection').style.display = 'block';
+    }
+
+    // 隱藏所有投票界面
+    hideAllVotingSections() {
+        document.getElementById('teamVotingSection').style.display = 'none';
+        document.getElementById('missionVotingSection').style.display = 'none';
+        document.getElementById('lakeLadySection').style.display = 'none';
+        document.getElementById('lakeLadyResultSection').style.display = 'none';
+    }
+
+    // 更新投票狀態顯示
+    updateVoteStatus(voteType, currentCount, totalCount) {
+        if (voteType === 'team') {
+            document.getElementById('teamVoteCount').textContent = currentCount;
+        } else if (voteType === 'mission') {
+            document.getElementById('missionVoteCount').textContent = currentCount;
+        }
+    }
+
     // 顯示指定畫面
     showScreen(screenId) {
         document.querySelectorAll('.screen').forEach(screen => {
@@ -738,6 +937,11 @@ class MultiplayerAvalonGame {
         
         document.getElementById(screenId).classList.add('active');
         this.currentScreen = screenId;
+        
+        // 切換畫面時隱藏投票界面
+        if (screenId === 'gameScreen') {
+            this.hideAllVotingSections();
+        }
     }
 }
 
