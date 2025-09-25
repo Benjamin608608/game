@@ -15,6 +15,8 @@ class MultiplayerAvalonGame {
         this.enableLakeLady = true;
         this.lakeLadyHolder = null;
         this.roleConfirmed = false;
+        this.isReordering = false;
+        this.draggedPlayer = null;
 
         this.initializeEventListeners();
         this.initializeSocketListeners();
@@ -135,6 +137,17 @@ class MultiplayerAvalonGame {
 
         document.getElementById('confirmLeaderBtn').addEventListener('click', () => {
             this.confirmLeaderAndStartGame();
+        });
+
+        // 玩家順序調整
+        document.getElementById('toggleReorderBtn').addEventListener('click', () => {
+            this.toggleReorderMode();
+        });
+        document.getElementById('saveOrderBtn').addEventListener('click', () => {
+            this.savePlayerOrder();
+        });
+        document.getElementById('resetOrderBtn').addEventListener('click', () => {
+            this.resetPlayerOrder();
         });
 
         // 遊戲中操作
@@ -261,6 +274,32 @@ class MultiplayerAvalonGame {
         this.socket.on('voteResult', (data) => {
             this.hideAllVotingSections();
             this.showMessage(data.message, data.success ? 'success' : 'error');
+            
+            // 更新任務軌道顯示
+            this.updateMissionDisplay();
+            
+            // 如果是任務結果，顯示下一個隊長信息
+            if (data.nextLeader) {
+                setTimeout(() => {
+                    this.showMessage(`下一個隊長：${data.nextLeader}`, 'info');
+                }, 2000);
+            }
+        });
+
+        // 玩家順序更新
+        this.socket.on('playerOrderUpdated', (data) => {
+            this.allPlayers = data.players;
+            this.updatePlayersList();
+            this.showMessage('玩家順序已更新', 'success');
+        });
+
+        // 任務軌道更新
+        this.socket.on('missionUpdate', (data) => {
+            if (this.gameData) {
+                this.gameData.missionResults = data.missionResults;
+                this.gameData.currentMission = data.currentMission;
+                this.updateMissionDisplay();
+            }
         });
 
         // 湖中女神事件
@@ -541,21 +580,25 @@ class MultiplayerAvalonGame {
     updateLobbyButtons() {
         const startBtn = document.getElementById('startGameBtn');
         const roleSelectionBtn = document.getElementById('roleSelectionBtn');
+        const reorderControls = document.getElementById('reorderControls');
         const waitingMsg = document.getElementById('waitingMessage');
         
         if (this.isHost) {
             if (this.allPlayers.length >= 6) {
                 startBtn.classList.remove('hidden');
                 roleSelectionBtn.classList.remove('hidden');
-                waitingMsg.textContent = '可以開始遊戲或自定義角色配置';
+                reorderControls.classList.remove('hidden');
+                waitingMsg.textContent = '可以開始遊戲、自定義角色或調整玩家順序';
             } else {
                 startBtn.classList.add('hidden');
                 roleSelectionBtn.classList.add('hidden');
+                reorderControls.classList.add('hidden');
                 waitingMsg.textContent = `需要至少6名玩家才能開始（當前 ${this.allPlayers.length} 人）`;
             }
         } else {
             startBtn.classList.add('hidden');
             roleSelectionBtn.classList.add('hidden');
+            reorderControls.classList.add('hidden');
             waitingMsg.textContent = '等待房主開始遊戲...';
         }
     }
@@ -569,12 +612,54 @@ class MultiplayerAvalonGame {
         
         playersList.innerHTML = '';
         
-        this.allPlayers.forEach(player => {
+        this.allPlayers.forEach((player, index) => {
             const playerItem = document.createElement('div');
             playerItem.className = `player-item ${player.isHost ? 'host' : ''}`;
+            playerItem.dataset.playerId = player.id;
+            playerItem.dataset.playerIndex = index;
+            
+            // 如果是重新排序模式，添加拖拽功能
+            if (this.isReordering && this.isHost) {
+                playerItem.classList.add('draggable');
+                playerItem.draggable = true;
+                
+                // 拖拽事件
+                playerItem.addEventListener('dragstart', (e) => {
+                    this.draggedPlayer = { id: player.id, index: index };
+                    playerItem.classList.add('dragging');
+                });
+                
+                playerItem.addEventListener('dragend', (e) => {
+                    playerItem.classList.remove('dragging');
+                    document.querySelectorAll('.player-item').forEach(item => {
+                        item.classList.remove('drag-over');
+                    });
+                });
+                
+                playerItem.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    playerItem.classList.add('drag-over');
+                });
+                
+                playerItem.addEventListener('dragleave', (e) => {
+                    playerItem.classList.remove('drag-over');
+                });
+                
+                playerItem.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    playerItem.classList.remove('drag-over');
+                    
+                    if (this.draggedPlayer && this.draggedPlayer.id !== player.id) {
+                        this.reorderPlayers(this.draggedPlayer.index, index);
+                    }
+                });
+            }
             
             playerItem.innerHTML = `
-                <div class="player-name">${player.name}</div>
+                <div class="player-name">
+                    ${this.isReordering ? `<span style="opacity: 0.6;">${index + 1}.</span> ` : ''}
+                    ${player.name}
+                </div>
                 ${player.isHost ? '<div class="host-badge">房主</div>' : ''}
             `;
             
@@ -649,9 +734,30 @@ class MultiplayerAvalonGame {
         const requirements = missionRequirements[playerCount] || [2, 3, 4, 3, 4];
 
         for (let i = 1; i <= 5; i++) {
+            const missionCard = document.querySelector(`[data-mission="${i}"]`);
             const statusElement = document.getElementById(`mission${i}Status`);
-            if (statusElement) {
-                statusElement.textContent = `${requirements[i-1]}人`;
+            
+            if (statusElement && missionCard) {
+                // 清除之前的狀態
+                missionCard.classList.remove('success', 'fail', 'current');
+                
+                if (this.gameData && this.gameData.missionResults) {
+                    if (i <= this.gameData.missionResults.length) {
+                        // 已完成的任務
+                        const result = this.gameData.missionResults[i - 1];
+                        missionCard.classList.add(result ? 'success' : 'fail');
+                        statusElement.textContent = result ? '✅' : '❌';
+                    } else if (i === this.gameData.currentMission) {
+                        // 當前任務
+                        missionCard.classList.add('current');
+                        statusElement.textContent = `${requirements[i-1]}人`;
+                    } else {
+                        // 未來任務
+                        statusElement.textContent = `${requirements[i-1]}人`;
+                    }
+                } else {
+                    statusElement.textContent = `${requirements[i-1]}人`;
+                }
             }
         }
     }
@@ -659,11 +765,39 @@ class MultiplayerAvalonGame {
     // 更新其他玩家顯示
     updateOtherPlayers() {
         const otherPlayersList = document.getElementById('otherPlayersList');
-        const otherPlayers = this.allPlayers.filter(p => p.name !== this.playerName);
+        // 如果是隊伍選擇階段，顯示所有玩家（包括自己）
+        let playersToShow;
+        if (this.gameData && this.gameData.currentPhase === 'teamSelection' && 
+            this.gameData.currentLeader === this.allPlayers.find(p => p.name === this.playerName)?.id) {
+            playersToShow = this.allPlayers; // 隊長可以看到所有玩家包括自己
+        } else {
+            playersToShow = this.allPlayers.filter(p => p.name !== this.playerName); // 其他情況只看其他玩家
+        }
         
         otherPlayersList.innerHTML = '';
         
-        otherPlayers.forEach(player => {
+        // 如果是隊長在選擇隊員，先顯示當前選中的隊員
+        if (this.gameData && this.gameData.currentPhase === 'teamSelection' && 
+            this.gameData.currentLeader === this.allPlayers.find(p => p.name === this.playerName)?.id) {
+            
+            if (this.selectedTeam && this.selectedTeam.length > 0) {
+                const breadcrumbDiv = document.createElement('div');
+                breadcrumbDiv.style.cssText = 'background: rgba(76, 175, 80, 0.2); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #4CAF50;';
+                breadcrumbDiv.innerHTML = `
+                    <h4 style="color: #4CAF50; margin-bottom: 10px;">🎯 已選擇的隊員 (${this.selectedTeam.length}人)</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        ${this.selectedTeam.map(member => 
+                            `<span style="background: #4CAF50; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.9em;">
+                                ${member.name} ❌
+                             </span>`
+                        ).join('')}
+                    </div>
+                `;
+                otherPlayersList.appendChild(breadcrumbDiv);
+            }
+        }
+        
+        playersToShow.forEach(player => {
             const playerElement = document.createElement('div');
             playerElement.className = 'other-player';
             
@@ -672,10 +806,25 @@ class MultiplayerAvalonGame {
             let specialIndicator = '';
             let specialClass = '';
             
+            // 顯示自己的標示
+            if (player.name === this.playerName) {
+                playerDisplayName = '我 (' + player.name + ')';
+                playerElement.style.background = 'rgba(255, 215, 0, 0.1)';
+                playerElement.style.borderLeft = '4px solid #ffd700';
+            }
+            
             // 顯示隊長標示
             if (this.gameData && this.gameData.currentLeader === player.id) {
                 playerElement.classList.add('leader');
                 playerDisplayName += ' 👑';
+            }
+            
+            // 顯示選中狀態
+            if (this.selectedTeam && this.selectedTeam.some(t => t.id === player.id)) {
+                playerElement.classList.add('selected');
+                playerElement.style.background = 'rgba(76, 175, 80, 0.3)';
+                playerElement.style.borderColor = '#4CAF50';
+                specialIndicator += ' ✅';
             }
             
             if (this.playerRole && this.playerRole.specialInfo && this.playerRole.specialInfo.knownPlayers) {
@@ -1011,56 +1160,103 @@ class MultiplayerAvalonGame {
     showLeaderSelection() {
         this.hideAllVotingSections();
         
-        // 創建轉盤區段
+        // 創建簡化的轉盤顯示
         const spinnerWheel = document.getElementById('spinnerWheel');
         const playerCount = this.allPlayers.length;
         const anglePerPlayer = 360 / playerCount;
         
-        spinnerWheel.innerHTML = '<div class="spinner-segments"></div>';
-        const segmentsContainer = spinnerWheel.querySelector('.spinner-segments');
+        // 清空並重新創建轉盤
+        spinnerWheel.innerHTML = '';
         
-        this.allPlayers.forEach((player, index) => {
-            const segment = document.createElement('div');
-            segment.className = 'spinner-segment';
-            segment.textContent = player.name;
-            segment.style.transform = `rotate(${index * anglePerPlayer}deg)`;
-            segmentsContainer.appendChild(segment);
-        });
+        // 創建一個簡單的圓形，顯示當前指向的玩家
+        spinnerWheel.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 1.5em; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.7);">
+                <div id="currentPlayerDisplay">準備轉盤...</div>
+            </div>
+            <div class="spinner-players-list">
+                ${this.allPlayers.map((player, index) => 
+                    `<div class="spinner-player-item" data-index="${index}">${player.name}</div>`
+                ).join('')}
+            </div>
+        `;
+        
+        // 保存玩家數據以供計算使用
+        this.spinnerPlayers = this.allPlayers;
         
         document.getElementById('leaderSelectionSection').style.display = 'block';
     }
 
     // 轉盤抽選隊長
     spinForLeader() {
-        const spinner = document.getElementById('leaderSpinner');
         const spinBtn = document.getElementById('spinBtn');
+        const currentDisplay = document.getElementById('currentPlayerDisplay');
         
         spinBtn.disabled = true;
         spinBtn.textContent = '轉盤中...';
         
-        // 隨機旋轉角度（至少3圈）
-        const randomAngle = 1080 + Math.random() * 720; // 3-5圈
-        const playerCount = this.allPlayers.length;
-        const anglePerPlayer = 360 / playerCount;
+        // 先決定要選中哪個玩家
+        const selectedIndex = Math.floor(Math.random() * this.spinnerPlayers.length);
+        const selectedPlayer = this.spinnerPlayers[selectedIndex];
         
-        // 計算最終選中的玩家
-        const finalAngle = randomAngle % 360;
-        const selectedIndex = Math.floor((360 - finalAngle) / anglePerPlayer) % playerCount;
-        const selectedPlayer = this.allPlayers[selectedIndex];
+        console.log(`隨機選中: ${selectedPlayer.name} (索引: ${selectedIndex})`);
         
-        // 設置CSS變量並開始旋轉
-        spinner.style.setProperty('--spin-angle', `${randomAngle}deg`);
-        spinner.classList.add('spinning');
+        // 清除之前的選中狀態
+        document.querySelectorAll('.spinner-player-item').forEach(item => {
+            item.classList.remove('selected');
+        });
         
-        // 3秒後顯示結果
-        setTimeout(() => {
-            document.getElementById('selectedLeader').textContent = selectedPlayer.name;
-            document.getElementById('spinResult').style.display = 'block';
-            this.selectedLeaderId = selectedPlayer.id;
+        // 模擬轉盤效果，快速切換顯示的玩家
+        let currentIndex = 0;
+        let speed = 100; // 初始速度
+        const maxIterations = 30 + selectedIndex; // 確保最終停在選中的玩家
+        let iteration = 0;
+        
+        const spinInterval = setInterval(() => {
+            // 更新顯示的玩家
+            currentDisplay.textContent = this.spinnerPlayers[currentIndex].name;
             
-            spinner.classList.remove('spinning');
-            spinBtn.style.display = 'none';
-        }, 3000);
+            // 高亮當前玩家
+            document.querySelectorAll('.spinner-player-item').forEach((item, index) => {
+                if (index === currentIndex) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+            
+            currentIndex = (currentIndex + 1) % this.spinnerPlayers.length;
+            iteration++;
+            
+            // 逐漸減慢速度
+            if (iteration > 15) {
+                speed += 50;
+            }
+            
+            // 在接近目標時精確停止
+            if (iteration >= maxIterations) {
+                // 確保停在正確的玩家
+                currentDisplay.textContent = selectedPlayer.name;
+                document.querySelectorAll('.spinner-player-item').forEach((item, index) => {
+                    if (index === selectedIndex) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+                
+                clearInterval(spinInterval);
+                
+                // 顯示結果
+                setTimeout(() => {
+                    document.getElementById('selectedLeader').textContent = selectedPlayer.name;
+                    document.getElementById('spinResult').style.display = 'block';
+                    this.selectedLeaderId = selectedPlayer.id;
+                    
+                    spinBtn.style.display = 'none';
+                    console.log(`最終選中: ${selectedPlayer.name}`);
+                }, 500);
+            }
+        }, speed);
     }
 
     // 確認角色
@@ -1124,44 +1320,123 @@ class MultiplayerAvalonGame {
         }
     }
 
+    // 切換重新排序模式
+    toggleReorderMode() {
+        this.isReordering = !this.isReordering;
+        const toggleBtn = document.getElementById('toggleReorderBtn');
+        const saveBtn = document.getElementById('saveOrderBtn');
+        
+        if (this.isReordering) {
+            toggleBtn.textContent = '取消調整';
+            toggleBtn.className = 'btn danger';
+            saveBtn.classList.remove('hidden');
+            this.showMessage('拖拽模式已啟用，拖拽玩家來調整順序', 'info');
+        } else {
+            toggleBtn.textContent = '開始調整順序';
+            toggleBtn.className = 'btn warning';
+            saveBtn.classList.add('hidden');
+            this.showMessage('已退出拖拽模式', 'info');
+        }
+        
+        this.updatePlayersList();
+    }
+
+    // 重新排序玩家
+    reorderPlayers(fromIndex, toIndex) {
+        if (fromIndex === toIndex) return;
+        
+        const newPlayers = [...this.allPlayers];
+        const draggedPlayer = newPlayers.splice(fromIndex, 1)[0];
+        newPlayers.splice(toIndex, 0, draggedPlayer);
+        
+        this.allPlayers = newPlayers;
+        this.updatePlayersList();
+        
+        this.showMessage(`移動了 ${draggedPlayer.name} 的位置`, 'success');
+    }
+
+    // 保存玩家順序
+    savePlayerOrder() {
+        this.socket.emit('updatePlayerOrder', {
+            roomCode: this.roomCode,
+            newOrder: this.allPlayers.map(p => p.id)
+        });
+        
+        this.toggleReorderMode(); // 退出重排模式
+        this.showMessage('玩家順序已保存！', 'success');
+    }
+
+    // 重置玩家順序
+    resetPlayerOrder() {
+        this.socket.emit('resetPlayerOrder', {
+            roomCode: this.roomCode
+        });
+        
+        this.showMessage('玩家順序已重置為加入順序', 'info');
+    }
+
     // 切換隊員選擇
     toggleTeamMember(playerId, playerName) {
         if (this.gameData.currentPhase !== 'teamSelection') return;
         
         const currentTeam = this.selectedTeam || [];
         const index = currentTeam.findIndex(p => p.id === playerId);
+        const requiredCount = this.getMissionPlayerCount(this.allPlayers.length, this.gameData.currentMission);
         
         if (index > -1) {
             // 移除隊員
             currentTeam.splice(index, 1);
+            this.showMessage(`移除了 ${playerName}，還需選擇 ${requiredCount - currentTeam.length} 人`, 'info');
         } else {
+            // 檢查是否已達到上限
+            if (currentTeam.length >= requiredCount) {
+                this.showMessage(`已達到隊員上限 ${requiredCount} 人，請先移除其他隊員`, 'error');
+                return;
+            }
             // 添加隊員
             currentTeam.push({ id: playerId, name: playerName });
+            this.showMessage(`選擇了 ${playerName}，還需選擇 ${requiredCount - currentTeam.length} 人`, 'success');
         }
         
         this.selectedTeam = currentTeam;
         this.updateTeamDisplay();
+        this.updateOtherPlayers(); // 重新更新顯示以反映選中狀態
     }
 
     // 更新隊伍顯示
     updateTeamDisplay() {
-        // 更新其他玩家的選中狀態
-        this.updateOtherPlayers();
-        
         // 更新遊戲操作按鈕
         const gameActions = document.getElementById('gameActions');
         const requiredCount = this.getMissionPlayerCount(this.allPlayers.length, this.gameData.currentMission);
         
-        if (this.selectedTeam.length === requiredCount) {
+        if (this.selectedTeam && this.selectedTeam.length === requiredCount) {
             gameActions.innerHTML = `
-                <div>已選擇隊員：${this.selectedTeam.map(p => p.name).join(', ')}</div>
-                <button class="btn primary" onclick="window.game.confirmTeam()">確認隊伍</button>
+                <div style="background: rgba(76, 175, 80, 0.2); padding: 15px; border-radius: 8px; margin: 10px 0; border: 2px solid #4CAF50;">
+                    <h4 style="color: #4CAF50;">✅ 隊伍已滿 (${requiredCount}人)</h4>
+                    <div>隊員：${this.selectedTeam.map(p => p.name).join('、')}</div>
+                </div>
+                <button class="btn primary" onclick="window.game.confirmTeam()">確認隊伍並進行投票</button>
             `;
         } else {
+            const selectedCount = this.selectedTeam ? this.selectedTeam.length : 0;
             gameActions.innerHTML = `
-                <div>請選擇 ${requiredCount} 名隊員（已選擇 ${this.selectedTeam.length} 名）</div>
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 10px 0;">
+                    <h4>🎯 請選擇執行任務的隊員</h4>
+                    <div>需要選擇：${requiredCount} 人</div>
+                    <div>已選擇：${selectedCount} 人</div>
+                    <div>還需選擇：${requiredCount - selectedCount} 人</div>
+                </div>
+                ${selectedCount > 0 ? `<button class="btn warning" onclick="window.game.clearTeam()">清空選擇</button>` : ''}
             `;
         }
+    }
+
+    // 清空隊伍選擇
+    clearTeam() {
+        this.selectedTeam = [];
+        this.updateTeamDisplay();
+        this.updateOtherPlayers();
+        this.showMessage('已清空隊伍選擇', 'info');
     }
 
     // 確認隊伍

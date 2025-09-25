@@ -150,6 +150,41 @@
             background: rgba(255, 215, 0, 0.2);
         }
 
+        .player-item.draggable {
+            cursor: move;
+            transition: all 0.3s ease;
+        }
+
+        .player-item.dragging {
+            opacity: 0.5;
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .player-item.drag-over {
+            border-color: #2196F3;
+            background: rgba(33, 150, 243, 0.2);
+        }
+
+        .players-reorder-controls {
+            text-align: center;
+            margin: 15px 0;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .players-reorder-controls h4 {
+            color: #ffd700;
+            margin-bottom: 10px;
+        }
+
+        .reorder-hint {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+
         .player-name {
             font-size: 1.1em;
         }
@@ -634,7 +669,8 @@
             height: 300px;
             border: 5px solid #ffd700;
             border-radius: 50%;
-            background: conic-gradient(from 0deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #ffeaa7, #dda0dd, #ff7675, #fd79a8);
+            background: #2a5298;
+            overflow: hidden;
         }
 
         .spinner-arrow {
@@ -654,22 +690,8 @@
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.2em;
-            font-weight: bold;
-            color: white;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
-            transition: transform 3s cubic-bezier(0.25, 0.1, 0.25, 1);
             position: relative;
-        }
-
-        .spinner-segments {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
+            transition: transform 3s cubic-bezier(0.25, 0.1, 0.25, 1);
         }
 
         .spinner-segment {
@@ -678,21 +700,43 @@
             height: 50%;
             transform-origin: 100% 100%;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
-            font-size: 0.9em;
+            font-size: 0.8em;
             font-weight: bold;
             color: white;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            padding-top: 15px;
+            clip-path: polygon(0 0, 0 100%, 100% 100%);
         }
 
         .spinner.spinning .spinner-wheel {
-            animation: spin 3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+            transform: rotate(var(--spin-angle));
         }
 
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(var(--spin-angle)); }
+        /* 轉盤玩家名單 */
+        .spinner-players-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .spinner-player-item {
+            background: rgba(255,255,255,0.1);
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 0.9em;
+            border: 2px solid transparent;
+        }
+
+        .spinner-player-item.selected {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.2);
         }
 
         #spinResult {
@@ -791,6 +835,16 @@
             
             <div class="players-list" id="playersList"></div>
             
+            <div class="players-reorder-controls hidden" id="reorderControls">
+                <h4>🔄 調整玩家順序</h4>
+                <div class="reorder-hint">拖拽玩家來調整順序（根據現實座位）</div>
+                <div class="reorder-actions">
+                    <button class="btn warning" id="toggleReorderBtn">開始調整順序</button>
+                    <button class="btn primary hidden" id="saveOrderBtn">保存順序</button>
+                    <button class="btn" id="resetOrderBtn">重置順序</button>
+                </div>
+            </div>
+
             <div id="lobbyActions">
                 <button class="btn primary hidden" id="startGameBtn">開始遊戲</button>
                 <button class="btn warning hidden" id="roleSelectionBtn">選擇角色</button>

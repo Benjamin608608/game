@@ -301,6 +301,12 @@ function processMissionVoteResult(room, io) {
     
     room.gameData.missionResults.push(missionSuccess);
     
+    // 更新任務軌道
+    io.to(room.id).emit('missionUpdate', {
+        missionResults: room.gameData.missionResults,
+        currentMission: room.gameData.currentMission
+    });
+    
     if (missionSuccess) {
         const successCount = room.gameData.missionResults.filter(r => r).length;
         if (successCount >= 3) {
@@ -325,6 +331,16 @@ function processMissionVoteResult(room, io) {
     if (shouldUseLakeLady(room)) {
         startLakeLady(room, io);
     } else {
+        // 準備下一個任務，通知下一個隊長
+        const nextLeaderInfo = prepareNextMission(room, io);
+        
+        io.to(room.id).emit('voteResult', {
+            message: resultMessage,
+            success: missionSuccess,
+            nextLeader: nextLeaderInfo.leaderName,
+            nextMission: room.gameData.currentMission + 1
+        });
+        
         nextMission(room, io);
     }
 }
@@ -370,11 +386,25 @@ function nextMission(room, io) {
     room.gameData.votes = [];
 }
 
+// 準備下一個任務
+function prepareNextMission(room, io) {
+    const playerOrder = room.gameData.playersOrder;
+    const currentIndex = playerOrder.indexOf(room.gameData.currentLeader);
+    const nextLeaderIndex = (currentIndex + 1) % playerOrder.length;
+    const nextLeaderId = playerOrder[nextLeaderIndex];
+    const nextLeaderPlayer = room.players.get(nextLeaderId);
+    
+    return {
+        leaderId: nextLeaderId,
+        leaderName: nextLeaderPlayer.name
+    };
+}
+
 // 下一個隊長
 function nextLeader(room) {
-    const playersArray = Array.from(room.players.keys());
-    const currentIndex = playersArray.indexOf(room.gameData.currentLeader);
-    room.gameData.currentLeader = playersArray[(currentIndex + 1) % playersArray.length];
+    const playerOrder = room.gameData.playersOrder;
+    const currentIndex = playerOrder.indexOf(room.gameData.currentLeader);
+    room.gameData.currentLeader = playerOrder[(currentIndex + 1) % playerOrder.length];
 }
 
 // 結束遊戲
@@ -677,6 +707,56 @@ io.on('connection', (socket) => {
         });
         
         room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
+    });
+
+    // 更新玩家順序
+    socket.on('updatePlayerOrder', (data) => {
+        const { roomCode, newOrder } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room || room.hostId !== socket.id || room.gameState === 'playing') return;
+        
+        // 驗證新順序的有效性
+        if (newOrder.length !== room.players.size || 
+            !newOrder.every(id => room.players.has(id))) {
+            socket.emit('error', { message: '無效的玩家順序' });
+            return;
+        }
+        
+        // 更新玩家順序
+        const orderedPlayers = newOrder.map(id => room.players.get(id));
+        
+        // 通知所有玩家順序更新
+        io.to(roomCode).emit('playerOrderUpdated', {
+            players: orderedPlayers.map(p => ({
+                id: p.id,
+                name: p.name,
+                isHost: p.isHost
+            }))
+        });
+        
+        console.log(`房間 ${roomCode} 玩家順序已更新：${orderedPlayers.map(p => p.name).join(' -> ')}`);
+    });
+
+    // 重置玩家順序
+    socket.on('resetPlayerOrder', (data) => {
+        const { roomCode } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room || room.hostId !== socket.id || room.gameState === 'playing') return;
+        
+        // 重置為原始加入順序（按照id順序）
+        const playersArray = Array.from(room.players.values()).sort((a, b) => a.id.localeCompare(b.id));
+        
+        io.to(roomCode).emit('playerOrderUpdated', {
+            players: playersArray.map(p => ({
+                id: p.id,
+                name: p.name,
+                isHost: p.isHost
+            }))
+        });
+        
+        console.log(`房間 ${roomCode} 玩家順序已重置`);
     });
 
     // 確認隊長選擇
