@@ -335,19 +335,14 @@ function shouldUseLakeLady(room) {
     if (room.gameData.lakeLadyUsed.includes(room.gameData.currentMission)) return false;
     
     // 從任務2結束後，每次任務完成都會觸發湖中女神
-    return room.gameData.currentMission >= 2;
+    return room.gameData.currentMission >= 2 && room.gameData.currentMission <= 5;
 }
 
 // 開始湖中女神階段
 function startLakeLady(room, io) {
     room.gameData.currentPhase = 'lakeLady';
     
-    // 選擇湖中女神持有者（通常是隨機或按規則選擇）
-    if (!room.gameData.lakeLadyHolder) {
-        const playersArray = Array.from(room.players.keys());
-        room.gameData.lakeLadyHolder = playersArray[Math.floor(Math.random() * playersArray.length)];
-    }
-    
+    // 湖中女神持有者在遊戲開始時就已經設定（第一個隊長的前一位）
     const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
     const availableTargets = Array.from(room.players.values())
         .filter(p => p.id !== room.gameData.lakeLadyHolder)
@@ -361,6 +356,8 @@ function startLakeLady(room, io) {
 
 // 湖中女神後繼續遊戲
 function continueGameAfterLakeLady(room, io) {
+    // 將湖中女神轉移給被查看的玩家（如果還有後續任務）
+    // 這裡先保持原持有者，具體轉移邏輯可以後續完善
     nextMission(room, io);
 }
 
@@ -541,7 +538,7 @@ io.on('connection', (socket) => {
         room.gameData = {
             currentPhase: 'roleReveal',
             currentMission: 1,
-            currentLeader: 0,
+            currentLeader: null,
             selectedPlayers: [],
             missionResults: [],
             votes: [],
@@ -549,7 +546,8 @@ io.on('connection', (socket) => {
             enableLakeLady: enableLakeLady !== false,
             showMordredIdentity: showMordredIdentity === true,
             lakeLadyHolder: null,
-            lakeLadyUsed: []
+            lakeLadyUsed: [],
+            playersOrder: playersArray.map(p => p.id) // 保存玩家順序
         };
 
         // 通知所有玩家遊戲開始，為每個角色提供相應的資訊
@@ -572,7 +570,33 @@ io.on('connection', (socket) => {
             });
         });
 
+        // 初始化角色確認狀態
+        room.gameData.roleConfirmations = new Set();
+        
         console.log(`房間 ${roomCode} 遊戲開始，${playerCount} 名玩家`);
+    });
+
+    // 角色確認
+    socket.on('roleConfirmed', (data) => {
+        const { roomCode } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'roleReveal') return;
+        
+        // 記錄玩家已確認角色
+        room.gameData.roleConfirmations.add(socket.id);
+        
+        console.log(`${playerInfo.playerName} 確認了角色，已確認：${room.gameData.roleConfirmations.size}/${room.players.size}`);
+        
+        // 檢查是否所有玩家都確認了角色
+        if (room.gameData.roleConfirmations.size === room.players.size) {
+            // 所有玩家都確認了角色，進入隊長選擇階段
+            room.gameData.currentPhase = 'leaderSelection';
+            
+            io.to(roomCode).emit('startLeaderSelection');
+            console.log(`房間 ${roomCode} 所有玩家確認角色完成，開始隊長選擇`);
+        }
     });
 
     // 隊伍投票
@@ -655,6 +679,40 @@ io.on('connection', (socket) => {
         room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
     });
 
+    // 確認隊長選擇
+    socket.on('confirmLeader', (data) => {
+        const { roomCode, leaderId } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room || room.hostId !== socket.id) return;
+        
+        // 設定第一個隊長
+        room.gameData.currentLeader = leaderId;
+        room.gameData.currentPhase = 'teamSelection';
+        
+        // 設定湖中女神持有者為隊長的前一個位置
+        const playerOrder = room.gameData.playersOrder;
+        const leaderIndex = playerOrder.indexOf(leaderId);
+        const lakeLadyIndex = (leaderIndex - 1 + playerOrder.length) % playerOrder.length;
+        room.gameData.lakeLadyHolder = playerOrder[lakeLadyIndex];
+        
+        console.log(`玩家順序：${playerOrder.map(id => room.players.get(id)?.name).join(' -> ')}`);
+        console.log(`隊長位置：${leaderIndex}，湖中女神位置：${lakeLadyIndex}`);
+        
+        const leaderPlayer = room.players.get(leaderId);
+        const lakeLadyPlayer = room.players.get(room.gameData.lakeLadyHolder);
+        
+        // 通知所有玩家隊長選擇結果
+        io.to(roomCode).emit('leaderSelected', {
+            leaderId: leaderId,
+            leaderName: leaderPlayer.name,
+            lakeLadyHolder: room.gameData.lakeLadyHolder,
+            lakeLadyHolderName: lakeLadyPlayer.name
+        });
+        
+        console.log(`房間 ${roomCode} 隊長：${leaderPlayer.name}，湖中女神持有者：${lakeLadyPlayer.name}`);
+    });
+
     // 湖中女神確認
     socket.on('lakeLadyConfirm', (data) => {
         const { roomCode } = data;
@@ -665,6 +723,34 @@ io.on('connection', (socket) => {
         // 轉移湖中女神給被查看的玩家（如果還有後續任務）
         // 繼續遊戲流程
         continueGameAfterLakeLady(room, io);
+    });
+
+    // 確認隊伍
+    socket.on('confirmTeam', (data) => {
+        const { roomCode, teamMembers } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'teamSelection') return;
+        if (room.gameData.currentLeader !== socket.id) return;
+        
+        // 設定選中的隊員
+        room.gameData.selectedPlayers = teamMembers;
+        room.gameData.currentPhase = 'teamVote';
+        room.gameData.votes = [];
+        
+        // 獲取隊員名字
+        const teamMemberNames = teamMembers.map(memberId => {
+            const player = room.players.get(memberId);
+            return player ? player.name : '';
+        }).filter(name => name);
+        
+        // 通知所有玩家開始隊伍投票
+        io.to(roomCode).emit('teamVotingStart', {
+            teamMembers: teamMemberNames
+        });
+        
+        console.log(`房間 ${roomCode} 隊伍確認：${teamMemberNames.join(', ')}`);
     });
 
     // 遊戲動作處理

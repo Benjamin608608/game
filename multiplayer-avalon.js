@@ -14,6 +14,7 @@ class MultiplayerAvalonGame {
         this.lakeLadyTarget = null;
         this.enableLakeLady = true;
         this.lakeLadyHolder = null;
+        this.roleConfirmed = false;
 
         this.initializeEventListeners();
         this.initializeSocketListeners();
@@ -127,9 +128,25 @@ class MultiplayerAvalonGame {
             this.confirmLakeLady();
         });
 
+        // 轉盤抽選
+        document.getElementById('spinBtn').addEventListener('click', () => {
+            this.spinForLeader();
+        });
+
+        document.getElementById('confirmLeaderBtn').addEventListener('click', () => {
+            this.confirmLeaderAndStartGame();
+        });
+
         // 遊戲中操作
         document.getElementById('viewRoleBtn').addEventListener('click', () => {
             this.showRoleDetails();
+        });
+
+        // 角色確認按鈕（在角色詳情彈窗中）
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'roleConfirmedBtn') {
+                this.confirmRole();
+            }
         });
 
         // 限制房間號只能輸入數字
@@ -194,7 +211,33 @@ class MultiplayerAvalonGame {
             this.gameData = data.gameData;
             this.allPlayers = data.allPlayers;
             this.showGameScreen();
-            this.showMessage('遊戲開始！', 'success');
+            this.showMessage('遊戲開始！角色已分配', 'success');
+            
+            // 如果是房主，顯示轉盤抽選隊長
+            if (this.isHost) {
+                setTimeout(() => {
+                    this.showLeaderSelection();
+                }, 2000);
+            }
+        });
+
+        // 隊長選擇完成
+        this.socket.on('leaderSelected', (data) => {
+            this.gameData.currentLeader = data.leaderId;
+            this.gameData.currentPhase = 'teamSelection';
+            this.hideAllVotingSections();
+            this.updateGameStatus();
+            this.updateOtherPlayers(); // 更新玩家顯示，標示隊長
+            this.showMessage(`${data.leaderName} 成為第一個隊長！湖中女神持有者：${data.lakeLadyHolderName}`, 'success');
+        });
+
+        // 角色確認完成，進入轉盤階段
+        this.socket.on('startLeaderSelection', () => {
+            if (this.isHost) {
+                this.showLeaderSelection();
+            } else {
+                this.showMessage('房主正在抽選第一個隊長...', 'info');
+            }
         });
 
         // 遊戲動作
@@ -629,6 +672,12 @@ class MultiplayerAvalonGame {
             let specialIndicator = '';
             let specialClass = '';
             
+            // 顯示隊長標示
+            if (this.gameData && this.gameData.currentLeader === player.id) {
+                playerElement.classList.add('leader');
+                playerDisplayName += ' 👑';
+            }
+            
             if (this.playerRole && this.playerRole.specialInfo && this.playerRole.specialInfo.knownPlayers) {
                 const knownPlayer = this.playerRole.specialInfo.knownPlayers.find(kp => kp.name === player.name);
                 if (knownPlayer) {
@@ -655,7 +704,7 @@ class MultiplayerAvalonGame {
             }
             
             if (player.isHost) {
-                playerDisplayName += ' 👑';
+                playerDisplayName += ' 🏠';
             }
             
             const knownPlayerInfo = this.playerRole && this.playerRole.specialInfo && this.playerRole.specialInfo.knownPlayers ? 
@@ -667,6 +716,15 @@ class MultiplayerAvalonGame {
                     ${knownPlayerInfo ? `<small style="opacity: 0.7; font-size: 0.8em;">${knownPlayerInfo.info}</small>` : ''}
                 </div>
             `;
+            
+            // 如果是隊伍選擇階段且當前玩家是隊長，添加點擊事件
+            if (this.gameData && this.gameData.currentPhase === 'teamSelection' && 
+                this.gameData.currentLeader === this.allPlayers.find(p => p.name === this.playerName)?.id) {
+                playerElement.style.cursor = 'pointer';
+                playerElement.addEventListener('click', () => {
+                    this.toggleTeamMember(player.id, player.name);
+                });
+            }
             
             playerElement.className += specialClass;
             otherPlayersList.appendChild(playerElement);
@@ -699,10 +757,14 @@ class MultiplayerAvalonGame {
         
         if (this.gameData) {
             switch (this.gameData.currentPhase) {
-                case 'roleReveal':
-                    phaseElement.textContent = '角色確認階段';
-                    statusElement.textContent = '請確認您的角色身份';
-                    break;
+            case 'roleReveal':
+                phaseElement.textContent = '角色確認階段';
+                statusElement.textContent = '請確認您的角色身份';
+                break;
+            case 'leaderSelection':
+                phaseElement.textContent = '抽選隊長';
+                statusElement.textContent = '正在抽選第一個隊長...';
+                break;
                 case 'teamSelection':
                     phaseElement.textContent = `任務 ${this.gameData.currentMission} - 選擇隊伍`;
                     statusElement.textContent = '隊長正在選擇執行任務的隊員';
@@ -768,10 +830,16 @@ class MultiplayerAvalonGame {
             </div>`;
         }
         
-        modalContent += `<button onclick="this.parentElement.parentElement.style.display='none'" 
-                        style="background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: block; margin: 20px auto 0;">
-                        確認
-                    </button></div>`;
+        modalContent += `<div style="display: flex; gap: 10px; justify-content: center; margin: 20px auto 0;">
+                        <button onclick="this.parentElement.parentElement.parentElement.style.display='none'" 
+                        style="background: #666; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                        關閉
+                    </button>
+                    <button id="roleConfirmedBtn"
+                        style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                        確認角色
+                    </button>
+                    </div></div>`;
         
         // 創建模態窗口
         const modal = document.createElement('div');
@@ -939,8 +1007,93 @@ class MultiplayerAvalonGame {
         document.getElementById('lakeLadyResultSection').style.display = 'block';
     }
 
+    // 顯示轉盤抽選隊長
+    showLeaderSelection() {
+        this.hideAllVotingSections();
+        
+        // 創建轉盤區段
+        const spinnerWheel = document.getElementById('spinnerWheel');
+        const playerCount = this.allPlayers.length;
+        const anglePerPlayer = 360 / playerCount;
+        
+        spinnerWheel.innerHTML = '<div class="spinner-segments"></div>';
+        const segmentsContainer = spinnerWheel.querySelector('.spinner-segments');
+        
+        this.allPlayers.forEach((player, index) => {
+            const segment = document.createElement('div');
+            segment.className = 'spinner-segment';
+            segment.textContent = player.name;
+            segment.style.transform = `rotate(${index * anglePerPlayer}deg)`;
+            segmentsContainer.appendChild(segment);
+        });
+        
+        document.getElementById('leaderSelectionSection').style.display = 'block';
+    }
+
+    // 轉盤抽選隊長
+    spinForLeader() {
+        const spinner = document.getElementById('leaderSpinner');
+        const spinBtn = document.getElementById('spinBtn');
+        
+        spinBtn.disabled = true;
+        spinBtn.textContent = '轉盤中...';
+        
+        // 隨機旋轉角度（至少3圈）
+        const randomAngle = 1080 + Math.random() * 720; // 3-5圈
+        const playerCount = this.allPlayers.length;
+        const anglePerPlayer = 360 / playerCount;
+        
+        // 計算最終選中的玩家
+        const finalAngle = randomAngle % 360;
+        const selectedIndex = Math.floor((360 - finalAngle) / anglePerPlayer) % playerCount;
+        const selectedPlayer = this.allPlayers[selectedIndex];
+        
+        // 設置CSS變量並開始旋轉
+        spinner.style.setProperty('--spin-angle', `${randomAngle}deg`);
+        spinner.classList.add('spinning');
+        
+        // 3秒後顯示結果
+        setTimeout(() => {
+            document.getElementById('selectedLeader').textContent = selectedPlayer.name;
+            document.getElementById('spinResult').style.display = 'block';
+            this.selectedLeaderId = selectedPlayer.id;
+            
+            spinner.classList.remove('spinning');
+            spinBtn.style.display = 'none';
+        }, 3000);
+    }
+
+    // 確認角色
+    confirmRole() {
+        if (this.roleConfirmed) return;
+        
+        this.roleConfirmed = true;
+        this.socket.emit('roleConfirmed', {
+            roomCode: this.roomCode
+        });
+        
+        // 關閉模態窗口
+        const modals = document.querySelectorAll('div[style*="position: fixed"]');
+        modals.forEach(modal => {
+            if (modal.parentNode) {
+                modal.parentNode.removeChild(modal);
+            }
+        });
+        
+        this.showMessage('角色確認完成！', 'success');
+    }
+
+    // 確認隊長並開始遊戲
+    confirmLeaderAndStartGame() {
+        this.socket.emit('confirmLeader', {
+            roomCode: this.roomCode,
+            leaderId: this.selectedLeaderId
+        });
+    }
+
     // 隱藏所有投票界面
     hideAllVotingSections() {
+        document.getElementById('leaderSelectionSection').style.display = 'none';
         document.getElementById('teamVotingSection').style.display = 'none';
         document.getElementById('missionVotingSection').style.display = 'none';
         document.getElementById('lakeLadySection').style.display = 'none';
@@ -970,9 +1123,74 @@ class MultiplayerAvalonGame {
             this.hideAllVotingSections();
         }
     }
+
+    // 切換隊員選擇
+    toggleTeamMember(playerId, playerName) {
+        if (this.gameData.currentPhase !== 'teamSelection') return;
+        
+        const currentTeam = this.selectedTeam || [];
+        const index = currentTeam.findIndex(p => p.id === playerId);
+        
+        if (index > -1) {
+            // 移除隊員
+            currentTeam.splice(index, 1);
+        } else {
+            // 添加隊員
+            currentTeam.push({ id: playerId, name: playerName });
+        }
+        
+        this.selectedTeam = currentTeam;
+        this.updateTeamDisplay();
+    }
+
+    // 更新隊伍顯示
+    updateTeamDisplay() {
+        // 更新其他玩家的選中狀態
+        this.updateOtherPlayers();
+        
+        // 更新遊戲操作按鈕
+        const gameActions = document.getElementById('gameActions');
+        const requiredCount = this.getMissionPlayerCount(this.allPlayers.length, this.gameData.currentMission);
+        
+        if (this.selectedTeam.length === requiredCount) {
+            gameActions.innerHTML = `
+                <div>已選擇隊員：${this.selectedTeam.map(p => p.name).join(', ')}</div>
+                <button class="btn primary" onclick="window.game.confirmTeam()">確認隊伍</button>
+            `;
+        } else {
+            gameActions.innerHTML = `
+                <div>請選擇 ${requiredCount} 名隊員（已選擇 ${this.selectedTeam.length} 名）</div>
+            `;
+        }
+    }
+
+    // 確認隊伍
+    confirmTeam() {
+        this.socket.emit('confirmTeam', {
+            roomCode: this.roomCode,
+            teamMembers: this.selectedTeam.map(p => p.id)
+        });
+    }
+
+    // 獲取任務所需人數
+    getMissionPlayerCount(playerCount, mission) {
+        const missionConfigs = {
+            6: [2, 3, 4, 3, 4],
+            7: [2, 3, 3, 4, 4],
+            8: [3, 4, 4, 5, 5],
+            9: [3, 4, 4, 5, 5],
+            10: [3, 4, 4, 5, 5],
+            11: [3, 4, 4, 5, 5],
+            12: [3, 4, 4, 5, 5]
+        };
+        return missionConfigs[playerCount] ? missionConfigs[playerCount][mission - 1] : 3;
+    }
 }
+
+// 將遊戲實例設為全局變量以便事件處理
+window.game = null;
 
 // 初始化遊戲
 window.addEventListener('DOMContentLoaded', () => {
-    new MultiplayerAvalonGame();
+    window.game = new MultiplayerAvalonGame();
 });
