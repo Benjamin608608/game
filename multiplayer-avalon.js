@@ -265,16 +265,10 @@ class MultiplayerAvalonGame {
         });
 
         this.socket.on('missionVotingStart', (data) => {
-            console.log('收到 missionVotingStart 事件:', data);
-            console.log('當前玩家名稱:', this.playerName);
-            console.log('隊伍成員:', data.teamMembers);
-            
             // 檢查當前玩家是否在執行任務的隊伍中
             if (data.teamMembers && data.teamMembers.includes(this.playerName)) {
-                console.log('玩家在隊伍中，顯示任務投票界面');
                 this.showMissionVoting(data.teamSize);
             } else {
-                console.log('玩家不在隊伍中，隱藏投票界面');
                 this.hideAllVotingSections();
                 this.showMessage(`執行任務的隊員：${data.teamMembers.join('、')}。等待他們決定任務結果...`, 'info');
             }
