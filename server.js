@@ -241,10 +241,11 @@ function validateCustomRoles(roles) {
 // 處理隊伍投票結果
 function processTeamVoteResult(room, io) {
     const approveCount = room.gameData.votes.filter(v => v.vote).length;
+    const rejectCount = room.gameData.votes.filter(v => !v.vote).length;
     const totalVotes = room.gameData.votes.length;
-    const approved = approveCount > totalVotes / 2; // 嚴格大於一半
+    const approved = rejectCount < totalVotes / 2; // 反對票少於一半才通過（一半或以上反對就拒絕）
     
-    const resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${totalVotes - approveCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！'}`;
+    const resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${rejectCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！（反對票 ≥ 一半）'}`;
     
     io.to(room.id).emit('voteResult', {
         message: resultMessage,
@@ -263,7 +264,11 @@ function processTeamVoteResult(room, io) {
             return player ? player.name : '';
         }).filter(name => name);
         
-        startMissionVoting(room, io, teamMemberNames);
+        // 通知被選中的隊員進行任務投票
+        io.to(room.id).emit('missionVotingStart', {
+            teamSize: room.gameData.selectedPlayers.length,
+            teamMembers: teamMemberNames
+        });
         
     } else {
         // 隊伍被拒絕
@@ -926,17 +931,6 @@ io.on('connection', (socket) => {
         });
         
         console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')}`);
-    });
-
-    // 確認隊伍投票通過，開始任務投票
-    function startMissionVoting(room, io, teamMemberNames) {
-        // 通知被選中的隊員進行任務投票
-        io.to(room.id).emit('missionVotingStart', {
-            teamSize: room.gameData.selectedPlayers.length,
-            teamMembers: teamMemberNames
-        });
-        
-        console.log(`房間 ${roomCode} 隊伍確認：${teamMemberNames.join(', ')}`);
     });
 
     // 遊戲動作處理
