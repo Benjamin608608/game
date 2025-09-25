@@ -726,8 +726,8 @@
                     <h3>好人陣營 <span id="goodCount">0</span>人</h3>
                     <div class="role-checkboxes">
                         <label class="role-checkbox">
-                            <input type="checkbox" id="role-merlin" value="梅林" checked disabled>
-                            <span class="role-name">🧙‍♂️ 梅林 (必選)</span>
+                            <input type="checkbox" id="role-merlin" value="梅林">
+                            <span class="role-name">🧙‍♂️ 梅林</span>
                             <small>知道邪惡角色（除莫德雷德）</small>
                         </label>
                         <label class="role-checkbox">
@@ -751,13 +751,13 @@
                     <h3>邪惡陣營 <span id="evilCount">0</span>人</h3>
                     <div class="role-checkboxes">
                         <label class="role-checkbox">
-                            <input type="checkbox" id="role-assassin" value="刺客" checked disabled>
-                            <span class="role-name">🗡️ 刺客 (必選)</span>
+                            <input type="checkbox" id="role-assassin" value="刺客">
+                            <span class="role-name">🗡️ 刺客</span>
                             <small>可以刺殺梅林</small>
                         </label>
                         <label class="role-checkbox">
-                            <input type="checkbox" id="role-mordred" value="莫德雷德" checked disabled>
-                            <span class="role-name">👑 莫德雷德 (必選)</span>
+                            <input type="checkbox" id="role-mordred" value="莫德雷德">
+                            <span class="role-name">👑 莫德雷德</span>
                             <small>對梅林隱形</small>
                         </label>
                         <label class="role-checkbox">
@@ -795,11 +795,16 @@
                     請確保角色數量等於玩家數量，且好壞人比例合理
                 </div>
                 
-                <div class="lake-lady-option">
+                <div class="game-options">
                     <label class="role-checkbox">
                         <input type="checkbox" id="enable-lake-lady" checked>
                         <span class="role-name">🏔️ 啟用湖中女神</span>
-                        <small>任務2和3後可查看其他玩家身份</small>
+                        <small>任務2結束後每次任務完成都會觸發</small>
+                    </label>
+                    <label class="role-checkbox">
+                        <input type="checkbox" id="show-mordred-identity">
+                        <span class="role-name">👁️ 顯示莫德雷德身份</span>
+                        <small>讓邪惡夥伴知道誰是莫德雷德（奧伯倫除外）</small>
                     </label>
                 </div>
             </div>

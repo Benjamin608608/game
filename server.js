@@ -110,7 +110,7 @@ function isEvilRole(role) {
 }
 
 // 獲取角色特定資訊
-function getRoleSpecificInfo(currentPlayer, allPlayers) {
+function getRoleSpecificInfo(currentPlayer, allPlayers, showMordredIdentity = false) {
     const roleInfo = {
         knownPlayers: [],
         specialKnowledge: '',
@@ -145,9 +145,22 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
         case '摩甘娜':
         case '爪牙':
             // 邪惡角色（除了奧伯倫）彼此知道
-            roleInfo.knownPlayers = allPlayers
-                .filter(p => p.isEvil && p.role !== '奧伯倫' && p.id !== currentPlayer.id)
-                .map(p => ({ name: p.name, info: `邪惡夥伴 (${p.role})` }));
+            const evilAllies = allPlayers.filter(p => p.isEvil && p.role !== '奧伯倫' && p.id !== currentPlayer.id);
+            
+            if (showMordredIdentity) {
+                // 如果啟用顯示莫德雷德身份，顯示具體角色
+                roleInfo.knownPlayers = evilAllies.map(p => ({ 
+                    name: p.name, 
+                    info: p.role === '莫德雷德' ? `邪惡夥伴 (莫德雷德)` : '邪惡夥伴' 
+                }));
+            } else {
+                // 只顯示是邪惡夥伴，不顯示具體身份
+                roleInfo.knownPlayers = evilAllies.map(p => ({ 
+                    name: p.name, 
+                    info: '邪惡夥伴' 
+                }));
+            }
+            
             roleInfo.specialKnowledge = `你的邪惡夥伴：${roleInfo.knownPlayers.map(p => p.name).join(', ')}`;
             
             if (currentPlayer.role === '刺客') {
@@ -186,16 +199,8 @@ function getRoleSpecificInfo(currentPlayer, allPlayers) {
 
 // 驗證自定義角色配置
 function validateCustomRoles(roles) {
-    const requiredRoles = ['梅林', '刺客', '莫德雷德'];
     const goodRoles = ['梅林', '派希維爾', '亞瑟的忠臣'];
     const evilRoles = ['刺客', '莫德雷德', '摩甘娜', '爪牙', '奧伯倫'];
-    
-    // 檢查必要角色
-    for (const required of requiredRoles) {
-        if (!roles.includes(required)) {
-            return { valid: false, message: `缺少必要角色：${required}` };
-        }
-    }
     
     // 檢查角色有效性
     for (const role of roles) {
@@ -209,12 +214,17 @@ function validateCustomRoles(roles) {
     const evilCount = roles.filter(role => evilRoles.includes(role)).length;
     
     // 檢查陣營平衡
-    if (goodCount < 2 || evilCount < 2) {
-        return { valid: false, message: '好人和壞人陣營都至少需要2人' };
+    if (goodCount < 1 || evilCount < 1) {
+        return { valid: false, message: '好人和壞人陣營都至少需要1人' };
     }
     
-    if (Math.abs(goodCount - evilCount) > 2) {
-        return { valid: false, message: '好人和壞人數量差距不能超過2人' };
+    if (Math.abs(goodCount - evilCount) > 3) {
+        return { valid: false, message: '好人和壞人數量差距不能超過3人' };
+    }
+    
+    // 檢查刺客和梅林的組合
+    if (roles.includes('刺客') && !roles.includes('梅林')) {
+        return { valid: false, message: '如果選擇刺客，必須同時選擇梅林' };
     }
     
     // 檢查角色組合合理性
@@ -324,8 +334,8 @@ function shouldUseLakeLady(room) {
     if (!room.gameData.enableLakeLady) return false;
     if (room.gameData.lakeLadyUsed.includes(room.gameData.currentMission)) return false;
     
-    // 通常在任務2和任務3後使用湖中女神
-    return room.gameData.currentMission === 2 || room.gameData.currentMission === 3;
+    // 從任務2結束後，每次任務完成都會觸發湖中女神
+    return room.gameData.currentMission >= 2;
 }
 
 // 開始湖中女神階段
@@ -483,7 +493,7 @@ io.on('connection', (socket) => {
 
     // 開始遊戲
     socket.on('startGame', (data) => {
-        const { roomCode, useDefaultRoles, customRoles, enableLakeLady } = data;
+        const { roomCode, useDefaultRoles, customRoles, enableLakeLady, showMordredIdentity } = data;
         const room = rooms.get(roomCode);
 
         if (!room || room.hostId !== socket.id) {
@@ -537,13 +547,14 @@ io.on('connection', (socket) => {
             votes: [],
             consecutiveRejects: 0,
             enableLakeLady: enableLakeLady !== false,
+            showMordredIdentity: showMordredIdentity === true,
             lakeLadyHolder: null,
             lakeLadyUsed: []
         };
 
         // 通知所有玩家遊戲開始，為每個角色提供相應的資訊
         room.players.forEach((player, socketId) => {
-            const roleInfo = getRoleSpecificInfo(player, playersArray);
+            const roleInfo = getRoleSpecificInfo(player, playersArray, room.gameData.showMordredIdentity);
             
             io.to(socketId).emit('gameStarted', {
                 playerInfo: {

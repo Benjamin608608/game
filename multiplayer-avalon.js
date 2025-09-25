@@ -102,7 +102,7 @@ class MultiplayerAvalonGame {
         });
 
         // 角色複選框
-        ['percival', 'morgana', 'oberon'].forEach(role => {
+        ['merlin', 'percival', 'assassin', 'mordred', 'morgana', 'oberon'].forEach(role => {
             document.getElementById(`role-${role}`).addEventListener('change', () => {
                 this.updateRoleCount();
             });
@@ -345,9 +345,18 @@ class MultiplayerAvalonGame {
         // 重置所有選項
         document.getElementById('servants-count').textContent = '0';
         document.getElementById('minions-count').textContent = '0';
+        
+        // 重置所有角色複選框（沒有預選）
+        document.getElementById('role-merlin').checked = false;
         document.getElementById('role-percival').checked = false;
+        document.getElementById('role-assassin').checked = false;
+        document.getElementById('role-mordred').checked = false;
         document.getElementById('role-morgana').checked = false;
         document.getElementById('role-oberon').checked = false;
+        
+        // 遊戲選項
+        document.getElementById('enable-lake-lady').checked = true;
+        document.getElementById('show-mordred-identity').checked = false;
         
         this.updateRoleCount();
     }
@@ -370,12 +379,17 @@ class MultiplayerAvalonGame {
     updateRoleCount() {
         const playerCount = this.allPlayers.length;
         
-        // 固定角色（必選）
-        let goodCount = 1; // 梅林
-        let evilCount = 2; // 刺客 + 莫德雷德
+        // 計算選中的角色數量
+        let goodCount = 0;
+        let evilCount = 0;
         
-        // 可選角色
+        // 好人陣營角色
+        if (document.getElementById('role-merlin').checked) goodCount++;
         if (document.getElementById('role-percival').checked) goodCount++;
+        
+        // 邪惡陣營角色
+        if (document.getElementById('role-assassin').checked) evilCount++;
+        if (document.getElementById('role-mordred').checked) evilCount++;
         if (document.getElementById('role-morgana').checked) evilCount++;
         if (document.getElementById('role-oberon').checked) evilCount++;
         
@@ -405,15 +419,18 @@ class MultiplayerAvalonGame {
         if (totalCount !== playerCount) {
             isValid = false;
             message = `角色總數（${totalCount}）必須等於玩家數量（${playerCount}）`;
-        } else if (goodCount < 2 || evilCount < 2) {
+        } else if (goodCount < 1 || evilCount < 1) {
             isValid = false;
-            message = '好人和壞人陣營都至少需要2人';
-        } else if (Math.abs(goodCount - evilCount) > 2) {
+            message = '好人和壞人陣營都至少需要1人';
+        } else if (Math.abs(goodCount - evilCount) > 3) {
             isValid = false;
-            message = '好人和壞人數量差距不能超過2人';
+            message = '好人和壞人數量差距不能超過3人';
         } else if (document.getElementById('role-morgana').checked && !document.getElementById('role-percival').checked) {
             isValid = false;
             message = '如果選擇摩甘娜，建議同時選擇派希維爾';
+        } else if (document.getElementById('role-assassin').checked && !document.getElementById('role-merlin').checked) {
+            isValid = false;
+            message = '如果選擇刺客，必須同時選擇梅林';
         }
         
         if (isValid) {
@@ -430,12 +447,14 @@ class MultiplayerAvalonGame {
     startGameWithCustomRoles() {
         const customRoles = this.getSelectedRoles();
         const enableLakeLady = document.getElementById('enable-lake-lady').checked;
+        const showMordredIdentity = document.getElementById('show-mordred-identity').checked;
         
         this.socket.emit('startGame', {
             roomCode: this.roomCode,
             useDefaultRoles: false,
             customRoles: customRoles,
-            enableLakeLady: enableLakeLady
+            enableLakeLady: enableLakeLady,
+            showMordredIdentity: showMordredIdentity
         });
     }
 
@@ -443,11 +462,13 @@ class MultiplayerAvalonGame {
     getSelectedRoles() {
         const roles = [];
         
-        // 固定角色
-        roles.push('梅林', '刺客', '莫德雷德');
-        
-        // 可選角色
+        // 好人陣營角色
+        if (document.getElementById('role-merlin').checked) roles.push('梅林');
         if (document.getElementById('role-percival').checked) roles.push('派希維爾');
+        
+        // 邪惡陣營角色
+        if (document.getElementById('role-assassin').checked) roles.push('刺客');
+        if (document.getElementById('role-mordred').checked) roles.push('莫德雷德');
         if (document.getElementById('role-morgana').checked) roles.push('摩甘娜');
         if (document.getElementById('role-oberon').checked) roles.push('奧伯倫');
         
