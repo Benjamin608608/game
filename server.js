@@ -249,7 +249,13 @@ function processTeamVoteResult(room, io) {
     const approveVoters = room.gameData.votes.filter(v => v.vote).map(v => v.playerName);
     const rejectVoters = room.gameData.votes.filter(v => !v.vote).map(v => v.playerName);
     
-    const resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${rejectCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！（反對票 ≥ 一半）'}`;
+    let resultMessage = `隊伍投票結果：贊成 ${approveCount} 票，反對 ${rejectCount} 票\n${approved ? '✅ 隊伍通過！' : '❌ 隊伍被拒絕！（反對票 ≥ 一半）'}`;
+    
+    // 如果被拒絕，顯示剩餘拒絕次數
+    if (!approved) {
+        const remainingRejects = 4 - room.gameData.consecutiveRejects;
+        resultMessage += `\n剩餘拒絕次數：${remainingRejects} 次`;
+    }
     
     io.to(room.id).emit('voteResult', {
         message: resultMessage,
@@ -301,11 +307,12 @@ function processTeamVoteResult(room, io) {
         // 通知新隊長選擇
         const newLeaderPlayer = room.players.get(room.gameData.currentLeader);
         setTimeout(() => {
-            io.to(roomCode).emit('gameStateUpdate', {
+            io.to(room.id).emit('gameStateUpdate', {
                 currentPhase: 'teamSelection',
                 currentMission: room.gameData.currentMission,
                 currentLeader: room.gameData.currentLeader,
-                leaderName: newLeaderPlayer.name
+                leaderName: newLeaderPlayer.name,
+                consecutiveRejects: room.gameData.consecutiveRejects
             });
         }, 2000);
     }
@@ -693,7 +700,7 @@ io.on('connection', (socket) => {
 
     // 開始遊戲
     socket.on('startGame', (data) => {
-        const { roomCode, useDefaultRoles, customRoles, enableLakeLady, showMordredIdentity, morganaAssassinAbility } = data;
+        const { roomCode, useDefaultRoles, customRoles, enableLakeLady, showMordredIdentity, morganaAssassinAbility, manualLeaderSelection } = data;
         const room = rooms.get(roomCode);
 
         if (!room || room.hostId !== socket.id) {
@@ -749,6 +756,7 @@ io.on('connection', (socket) => {
             enableLakeLady: enableLakeLady !== false,
             showMordredIdentity: showMordredIdentity === true,
             morganaAssassinAbility: morganaAssassinAbility === true,
+            manualLeaderSelection: manualLeaderSelection === true,
             lakeLadyHolder: null,
             lakeLadyUsed: [],
             lakeLadyPreviousHolders: [], // 記錄曾經持有過湖中女神的玩家
@@ -799,8 +807,10 @@ io.on('connection', (socket) => {
             // 所有玩家都確認了角色，進入隊長選擇階段
             room.gameData.currentPhase = 'leaderSelection';
             
-            io.to(roomCode).emit('startLeaderSelection');
-            console.log(`房間 ${roomCode} 所有玩家確認角色完成，開始隊長選擇`);
+            io.to(roomCode).emit('startLeaderSelection', {
+                manualSelection: room.gameData.manualLeaderSelection
+            });
+            console.log(`房間 ${roomCode} 所有玩家確認角色完成，開始隊長選擇 (手動: ${room.gameData.manualLeaderSelection})`);
         }
     });
 
@@ -1010,8 +1020,6 @@ io.on('connection', (socket) => {
         
         // 設定選中的隊員
         room.gameData.selectedPlayers = teamMembers;
-        room.gameData.currentPhase = 'teamVote';
-        room.gameData.votes = [];
         
         // 獲取隊員名字
         const teamMemberNames = teamMembers.map(memberId => {
@@ -1019,12 +1027,46 @@ io.on('connection', (socket) => {
             return player ? player.name : '';
         }).filter(name => name);
         
-        // 通知所有玩家開始隊伍投票
-        io.to(roomCode).emit('teamVotingStart', {
-            teamMembers: teamMemberNames
-        });
-        
-        console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')}`);
+        // 檢查是否已經拒絕4次，如果是則直接通過
+        if (room.gameData.consecutiveRejects >= 4) {
+            // 第5次直接通過，不需要投票
+            io.to(roomCode).emit('voteResult', {
+                message: `⚠️ 已達到最大拒絕次數限制！\n隊伍自動通過：${teamMemberNames.join('、')}`,
+                success: true,
+                voteDetails: {
+                    type: 'team',
+                    approveVoters: Array.from(room.players.values()).map(p => p.name), // 視為全員贊成
+                    rejectVoters: [],
+                    mission: room.gameData.currentMission
+                }
+            });
+            
+            // 直接開始任務投票
+            room.gameData.currentPhase = 'missionVote';
+            room.gameData.votes = [];
+            room.gameData.consecutiveRejects = 0;
+            
+            setTimeout(() => {
+                io.to(roomCode).emit('missionVotingStart', {
+                    teamSize: room.gameData.selectedPlayers.length,
+                    teamMembers: teamMemberNames
+                });
+            }, 2000);
+            
+            console.log(`房間 ${roomCode} 第5次隊伍自動通過：${teamMemberNames.join(', ')}`);
+        } else {
+            // 正常投票流程
+            room.gameData.currentPhase = 'teamVote';
+            room.gameData.votes = [];
+            
+            // 通知所有玩家開始隊伍投票
+            io.to(roomCode).emit('teamVotingStart', {
+                teamMembers: teamMemberNames,
+                consecutiveRejects: room.gameData.consecutiveRejects
+            });
+            
+            console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')} (拒絕次數: ${room.gameData.consecutiveRejects})`);
+        }
     });
 
     // 刺殺選擇

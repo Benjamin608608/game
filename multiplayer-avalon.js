@@ -246,11 +246,18 @@ class MultiplayerAvalonGame {
         });
 
         // 角色確認完成，進入轉盤階段
-        this.socket.on('startLeaderSelection', () => {
+        this.socket.on('startLeaderSelection', (data) => {
             if (this.isHost) {
-                this.showLeaderSelection();
+                if (data && data.manualSelection) {
+                    this.showManualLeaderSelection();
+                } else {
+                    this.showLeaderSelection();
+                }
             } else {
-                this.showMessage('房主正在抽選第一個隊長...', 'info');
+                const message = data && data.manualSelection ? 
+                    '房主正在選擇第一個隊長...' : 
+                    '房主正在抽選第一個隊長...';
+                this.showMessage(message, 'info');
             }
         });
 
@@ -261,7 +268,7 @@ class MultiplayerAvalonGame {
 
         // 投票相關事件
         this.socket.on('teamVotingStart', (data) => {
-            this.showTeamVoting(data.teamMembers);
+            this.showTeamVoting(data.teamMembers, data.consecutiveRejects);
         });
 
         this.socket.on('missionVotingStart', (data) => {
@@ -320,6 +327,7 @@ class MultiplayerAvalonGame {
                 this.gameData.currentPhase = data.currentPhase;
                 this.gameData.currentMission = data.currentMission;
                 this.gameData.currentLeader = data.currentLeader;
+                this.gameData.consecutiveRejects = data.consecutiveRejects || 0;
                 
                 // 更新湖中女神持有者
                 if (data.lakeLadyHolder) {
@@ -339,6 +347,9 @@ class MultiplayerAvalonGame {
                 let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
                 if (data.lakeLadyHolderName) {
                     message += `，湖中女神：${data.lakeLadyHolderName}`;
+                }
+                if (data.consecutiveRejects > 0) {
+                    message += `\n⚠️ 已連續拒絕 ${data.consecutiveRejects} 次`;
                 }
                 this.showMessage(message, 'success');
             }
@@ -556,6 +567,7 @@ class MultiplayerAvalonGame {
         document.getElementById('enable-lake-lady').checked = true;
         document.getElementById('show-mordred-identity').checked = false;
         document.getElementById('morgana-assassin-ability').checked = false;
+        document.getElementById('manual-leader-selection').checked = false;
         
         this.updateRoleCount();
     }
@@ -648,6 +660,7 @@ class MultiplayerAvalonGame {
         const enableLakeLady = document.getElementById('enable-lake-lady').checked;
         const showMordredIdentity = document.getElementById('show-mordred-identity').checked;
         const morganaAssassinAbility = document.getElementById('morgana-assassin-ability').checked;
+        const manualLeaderSelection = document.getElementById('manual-leader-selection').checked;
         
         this.socket.emit('startGame', {
             roomCode: this.roomCode,
@@ -655,7 +668,8 @@ class MultiplayerAvalonGame {
             customRoles: customRoles,
             enableLakeLady: enableLakeLady,
             showMordredIdentity: showMordredIdentity,
-            morganaAssassinAbility: morganaAssassinAbility
+            morganaAssassinAbility: morganaAssassinAbility,
+            manualLeaderSelection: manualLeaderSelection
         });
     }
 
@@ -1217,7 +1231,7 @@ class MultiplayerAvalonGame {
     }
 
     // 顯示隊伍投票界面
-    showTeamVoting(teamMembers) {
+    showTeamVoting(teamMembers, consecutiveRejects = 0) {
         this.hideAllVotingSections();
         
         const selectedTeamDiv = document.getElementById('selectedTeam');
@@ -1229,6 +1243,19 @@ class MultiplayerAvalonGame {
             memberDiv.textContent = memberName;
             selectedTeamDiv.appendChild(memberDiv);
         });
+        
+        // 顯示拒絕次數信息
+        if (consecutiveRejects > 0) {
+            const rejectInfoDiv = document.createElement('div');
+            rejectInfoDiv.style.cssText = 'background: rgba(255, 152, 0, 0.2); padding: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #ff9800;';
+            const remainingRejects = 4 - consecutiveRejects;
+            rejectInfoDiv.innerHTML = `
+                <strong>⚠️ 注意：</strong>已連續拒絕 ${consecutiveRejects} 次<br>
+                剩餘拒絕次數：${remainingRejects} 次
+                ${remainingRejects === 0 ? '<br><span style="color: #f44336;">下次隊伍將自動通過！</span>' : ''}
+            `;
+            selectedTeamDiv.appendChild(rejectInfoDiv);
+        }
         
         document.getElementById('totalPlayers').textContent = this.allPlayers.length;
         document.getElementById('teamVoteCount').textContent = '0';
@@ -1282,6 +1309,38 @@ class MultiplayerAvalonGame {
         `;
         
         document.getElementById('lakeLadyResultSection').style.display = 'block';
+    }
+
+    // 顯示手動選擇隊長界面
+    showManualLeaderSelection() {
+        this.hideAllVotingSections();
+        
+        const leaderSelectionSection = document.getElementById('leaderSelectionSection');
+        leaderSelectionSection.innerHTML = `
+            <h3>👤 選擇第一個隊長</h3>
+            <p>請選擇一名玩家作為第一個隊長</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
+                ${this.allPlayers.map(player => `
+                    <button class="btn" onclick="window.game.selectManualLeader('${player.id}')" 
+                            style="padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);">
+                        ${player.name}
+                        ${player.isHost ? ' 🏠' : ''}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+        
+        leaderSelectionSection.style.display = 'block';
+    }
+
+    // 手動選擇隊長
+    selectManualLeader(playerId) {
+        if (confirm('確定選擇這名玩家作為第一個隊長嗎？')) {
+            this.socket.emit('confirmLeader', {
+                roomCode: this.roomCode,
+                leaderId: playerId
+            });
+        }
     }
 
     // 顯示轉盤抽選隊長
@@ -1536,18 +1595,34 @@ class MultiplayerAvalonGame {
         // 更新遊戲操作按鈕
         const gameActions = document.getElementById('gameActions');
         const requiredCount = this.getMissionPlayerCount(this.allPlayers.length, this.gameData.currentMission);
+        const consecutiveRejects = this.gameData.consecutiveRejects || 0;
+        
+        // 拒絕次數警告信息
+        let rejectWarning = '';
+        if (consecutiveRejects > 0) {
+            const remainingRejects = 4 - consecutiveRejects;
+            rejectWarning = `
+                <div style="background: rgba(255, 152, 0, 0.2); padding: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #ff9800;">
+                    <strong>⚠️ 警告：</strong>已連續拒絕 ${consecutiveRejects} 次，剩餘 ${remainingRejects} 次
+                    ${remainingRejects === 0 ? '<br><span style="color: #f44336;">下次隊伍將自動通過，無需投票！</span>' : ''}
+                </div>
+            `;
+        }
         
         if (this.selectedTeam && this.selectedTeam.length === requiredCount) {
+            const buttonText = consecutiveRejects >= 4 ? '確認隊伍（自動通過）' : '確認隊伍並進行投票';
             gameActions.innerHTML = `
+                ${rejectWarning}
                 <div style="background: rgba(76, 175, 80, 0.2); padding: 15px; border-radius: 8px; margin: 10px 0; border: 2px solid #4CAF50;">
                     <h4 style="color: #4CAF50;">✅ 隊伍已滿 (${requiredCount}人)</h4>
                     <div>隊員：${this.selectedTeam.map(p => p.name).join('、')}</div>
                 </div>
-                <button class="btn primary" onclick="window.game.confirmTeam()">確認隊伍並進行投票</button>
+                <button class="btn primary" onclick="window.game.confirmTeam()">${buttonText}</button>
             `;
         } else {
             const selectedCount = this.selectedTeam ? this.selectedTeam.length : 0;
             gameActions.innerHTML = `
+                ${rejectWarning}
                 <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 10px 0;">
                     <h4>🎯 請選擇執行任務的隊員</h4>
                     <div>需要選擇：${requiredCount} 人</div>
