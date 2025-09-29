@@ -440,6 +440,16 @@ function startLakeLady(room, io) {
         holderName: holderPlayer.name,
         availableTargets: availableTargets
     });
+    
+    // 通知所有玩家當前遊戲狀態
+    io.to(room.id).emit('gameStateUpdate', {
+        currentPhase: 'lakeLady',
+        currentMission: room.gameData.currentMission,
+        currentLeader: room.gameData.currentLeader,
+        lakeLadyHolder: room.gameData.lakeLadyHolder,
+        lakeLadyHolderName: holderPlayer.name,
+        statusMessage: `等待 ${holderPlayer.name} 使用湖中女神查驗...`
+    });
 }
 
 // 湖中女神後繼續遊戲
@@ -882,6 +892,18 @@ io.on('connection', (socket) => {
             targetName: targetName
         });
         
+        // 添加湖中女神查驗記錄
+        io.to(roomCode).emit('voteResult', {
+            message: `🏔️ 湖中女神查驗：${playerInfo.playerName} 查驗了 ${targetName}`,
+            success: true,
+            voteDetails: {
+                type: 'lakeLady',
+                holderName: playerInfo.playerName,
+                targetName: targetName,
+                mission: room.gameData.currentMission
+            }
+        });
+        
         // 記錄當前持有者為曾經持有過湖中女神的玩家
         if (!room.gameData.lakeLadyPreviousHolders.includes(socket.id)) {
             room.gameData.lakeLadyPreviousHolders.push(socket.id);
@@ -1108,8 +1130,12 @@ io.on('connection', (socket) => {
             player.isEvil = false;
         });
         
-        // 通知所有玩家遊戲重新開始
-        io.to(roomCode).emit('gameRestarted');
+        // 通知所有玩家遊戲重新開始，區分房主和其他玩家
+        room.players.forEach((player, socketId) => {
+            io.to(socketId).emit('gameRestarted', {
+                isHost: player.isHost
+            });
+        });
         
         console.log(`房間 ${roomCode} 房主重新開始遊戲`);
     });

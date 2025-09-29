@@ -332,18 +332,23 @@ class MultiplayerAvalonGame {
                 
                 // 更新界面
                 this.hideAllVotingSections();
-                this.updateGameStatus();
+                this.updateGameStatus(data); // 傳遞data以便處理狀態消息
                 this.updateOtherPlayers();
                 this.updateTeamDisplay();
                 
-                let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
-                if (data.lakeLadyHolderName) {
-                    message += `，湖中女神：${data.lakeLadyHolderName}`;
+                // 根據階段顯示不同消息
+                if (data.statusMessage) {
+                    this.showMessage(data.statusMessage, 'info');
+                } else if (data.currentPhase === 'teamSelection') {
+                    let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
+                    if (data.lakeLadyHolderName) {
+                        message += `，湖中女神：${data.lakeLadyHolderName}`;
+                    }
+                    if (data.consecutiveRejects > 0) {
+                        message += `\n⚠️ 本局已拒絕 ${data.consecutiveRejects} 次`;
+                    }
+                    this.showMessage(message, 'success');
                 }
-                if (data.consecutiveRejects > 0) {
-                    message += `\n⚠️ 本局已拒絕 ${data.consecutiveRejects} 次`;
-                }
-                this.showMessage(message, 'success');
             }
         });
 
@@ -399,7 +404,7 @@ class MultiplayerAvalonGame {
         });
 
         // 房主重新開始遊戲事件
-        this.socket.on('gameRestarted', () => {
+        this.socket.on('gameRestarted', (data) => {
             // 清空遊戲數據
             this.gameData = null;
             this.playerRole = null;
@@ -417,10 +422,23 @@ class MultiplayerAvalonGame {
             // 隱藏所有投票界面
             this.hideAllVotingSections();
             
-            // 回到角色選擇畫面
-            this.showScreen('roleSelectionScreen');
-            this.initializeRoleSelection();
-            this.showMessage('房主重新開始了遊戲', 'info');
+            // 關閉遊戲結束模態窗口
+            if (this.gameEndModal) {
+                document.body.removeChild(this.gameEndModal);
+                this.gameEndModal = null;
+            }
+            
+            // 根據是否為房主決定跳轉畫面
+            if (data.isHost) {
+                // 房主跳到角色選擇畫面
+                this.showScreen('roleSelectionScreen');
+                this.initializeRoleSelection();
+                this.showMessage('重新開始遊戲，請選擇角色配置', 'success');
+            } else {
+                // 其他玩家跳到等待畫面
+                this.showScreen('lobbyScreen');
+                this.showMessage('房主重新開始了遊戲，等待房主選擇角色配置...', 'info');
+            }
         });
 
         // 錯誤處理
@@ -926,14 +944,8 @@ class MultiplayerAvalonGame {
     // 更新其他玩家顯示
     updateOtherPlayers() {
         const otherPlayersList = document.getElementById('otherPlayersList');
-        // 如果是隊伍選擇階段，顯示所有玩家（包括自己）
-        let playersToShow;
-        if (this.gameData && this.gameData.currentPhase === 'teamSelection' && 
-            this.gameData.currentLeader === this.allPlayers.find(p => p.name === this.playerName)?.id) {
-            playersToShow = this.allPlayers; // 隊長可以看到所有玩家包括自己
-        } else {
-            playersToShow = this.allPlayers.filter(p => p.name !== this.playerName); // 其他情況只看其他玩家
-        }
+        // 始終顯示所有玩家（包括自己）
+        let playersToShow = this.allPlayers;
         
         otherPlayersList.innerHTML = '';
         
@@ -978,6 +990,15 @@ class MultiplayerAvalonGame {
             if (this.gameData && this.gameData.currentLeader === player.id) {
                 playerElement.classList.add('leader');
                 playerDisplayName += ' 👑';
+            }
+            
+            // 顯示湖中女神標示
+            if (this.gameData && this.gameData.lakeLadyHolder === player.id) {
+                playerDisplayName += ' 🏔️';
+                if (!playerElement.style.borderLeft) {
+                    playerElement.style.borderLeft = '4px solid #9c27b0';
+                    playerElement.style.background = 'rgba(156, 39, 176, 0.1)';
+                }
             }
             
             // 顯示選中狀態
@@ -1061,7 +1082,7 @@ class MultiplayerAvalonGame {
     }
 
     // 更新遊戲狀態
-    updateGameStatus() {
+    updateGameStatus(data = null) {
         const phaseElement = document.getElementById('gamePhase');
         const statusElement = document.getElementById('gameStatus');
         
@@ -1070,6 +1091,14 @@ class MultiplayerAvalonGame {
             case 'leaderSelection':
                 phaseElement.textContent = '抽選隊長';
                 statusElement.textContent = '正在抽選第一個隊長...';
+                break;
+            case 'lakeLady':
+                phaseElement.textContent = `任務 ${this.gameData.currentMission} - 湖中女神`;
+                if (data && data.statusMessage) {
+                    statusElement.textContent = data.statusMessage;
+                } else {
+                    statusElement.textContent = '湖中女神正在查驗...';
+                }
                 break;
         case 'teamSelection':
             const currentLeaderPlayer = this.allPlayers.find(p => p.id === this.gameData.currentLeader);
@@ -1645,6 +1674,15 @@ class MultiplayerAvalonGame {
                     <span class="voter-item voter-fail">失敗 ${voteDetails.failCount} 票</span>
                 </div>
             `;
+        } else if (voteDetails.type === 'lakeLady') {
+            content = `
+                <h5>任務 ${voteDetails.mission} - 湖中女神查驗</h5>
+                <div style="margin: 10px 0;">
+                    <span class="voter-item" style="background: rgba(156, 39, 176, 0.3); border: 1px solid #9c27b0; color: #9c27b0;">
+                        🏔️ ${voteDetails.holderName} 查驗了 ${voteDetails.targetName}
+                    </span>
+                </div>
+            `;
         }
         
         voteRecord.innerHTML = content;
@@ -1731,10 +1769,12 @@ class MultiplayerAvalonGame {
                 </div>
                 
                 <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
-                    <button onclick="window.game.restartGame()" 
-                            style="background: #4CAF50; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
-                        🔄 再來一局
-                    </button>
+                    ${this.isHost ? `
+                        <button onclick="window.game.restartGame()" 
+                                style="background: #4CAF50; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
+                            🔄 再來一局
+                        </button>
+                    ` : ''}
                     <button onclick="window.game.backToLobby()" 
                             style="background: #2196F3; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
                         🏠 返回大廳
