@@ -131,6 +131,13 @@ class MultiplayerAvalonGame {
             this.confirmLakeLady();
         });
 
+        // 房主重新開始遊戲按鈕
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'hostRestartBtn') {
+                this.hostRestartGame();
+            }
+        });
+
         // 轉盤抽選
         document.getElementById('spinBtn').addEventListener('click', () => {
             this.spinForLeader();
@@ -151,17 +158,7 @@ class MultiplayerAvalonGame {
             this.resetPlayerOrder();
         });
 
-        // 遊戲中操作
-        document.getElementById('viewRoleBtn').addEventListener('click', () => {
-            this.showRoleDetails();
-        });
 
-        // 角色確認按鈕（在角色詳情彈窗中）
-        document.addEventListener('click', (e) => {
-            if (e.target && e.target.id === 'roleConfirmedBtn') {
-                this.confirmRole();
-            }
-        });
 
         // 限制房間號只能輸入數字
         ['newRoomCode', 'joinRoomCode'].forEach(id => {
@@ -399,6 +396,31 @@ class MultiplayerAvalonGame {
         // 遊戲結束事件
         this.socket.on('gameEnded', (data) => {
             this.showGameEndScreen(data.goodWins, data.message, data.roles);
+        });
+
+        // 房主重新開始遊戲事件
+        this.socket.on('gameRestarted', () => {
+            // 清空遊戲數據
+            this.gameData = null;
+            this.playerRole = null;
+            this.selectedTeam = [];
+            this.currentVote = null;
+            this.lakeLadyTarget = null;
+            this.roleConfirmed = false;
+            
+            // 清空投票記錄
+            const voteRecords = document.getElementById('voteRecords');
+            if (voteRecords) {
+                voteRecords.innerHTML = '';
+            }
+            
+            // 隱藏所有投票界面
+            this.hideAllVotingSections();
+            
+            // 回到角色選擇畫面
+            this.showScreen('roleSelectionScreen');
+            this.initializeRoleSelection();
+            this.showMessage('房主重新開始了遊戲', 'info');
         });
 
         // 錯誤處理
@@ -808,6 +830,14 @@ class MultiplayerAvalonGame {
         this.updateMissionDisplay();
         this.updateOtherPlayers();
         this.updateGameStatus();
+        
+        // 如果是房主，顯示重新開始按鈕
+        const hostRestartBtn = document.getElementById('hostRestartBtn');
+        if (this.isHost) {
+            hostRestartBtn.classList.remove('hidden');
+        } else {
+            hostRestartBtn.classList.add('hidden');
+        }
     }
 
     // 更新角色顯示
@@ -1037,10 +1067,6 @@ class MultiplayerAvalonGame {
         
         if (this.gameData) {
             switch (this.gameData.currentPhase) {
-            case 'roleReveal':
-                phaseElement.textContent = '角色確認階段';
-                statusElement.textContent = '請確認您的角色身份';
-                break;
             case 'leaderSelection':
                 phaseElement.textContent = '抽選隊長';
                 statusElement.textContent = '正在抽選第一個隊長...';
@@ -1075,77 +1101,6 @@ class MultiplayerAvalonGame {
         }
     }
 
-    // 顯示角色詳情
-    showRoleDetails() {
-        if (!this.playerRole || !this.playerRole.specialInfo) return;
-        
-        let modalContent = `<div style="background: white; color: #333; padding: 30px; border-radius: 15px; max-width: 500px; max-height: 80vh; overflow-y: auto;">`;
-        
-        // 角色標題
-        const roleColor = this.playerRole.isEvil ? '#f44336' : '#4CAF50';
-        modalContent += `<h2 style="color: ${roleColor}; text-align: center; margin-bottom: 20px;">
-            ${this.playerRole.role} (${this.playerRole.isEvil ? '邪惡陣營' : '好人陣營'})
-        </h2>`;
-        
-        // 特殊知識
-        if (this.playerRole.specialInfo.specialKnowledge) {
-            modalContent += `<div style="background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <h3>🔍 特殊資訊</h3>
-                <p>${this.playerRole.specialInfo.specialKnowledge}</p>
-            </div>`;
-        }
-        
-        // 已知玩家
-        if (this.playerRole.specialInfo.knownPlayers && this.playerRole.specialInfo.knownPlayers.length > 0) {
-            modalContent += `<div style="background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <h3>👥 已知身份</h3>`;
-            
-            this.playerRole.specialInfo.knownPlayers.forEach(player => {
-                modalContent += `<div style="background: white; margin: 8px 0; padding: 10px; border-radius: 5px; border-left: 4px solid ${roleColor};">
-                    <strong>${player.name}</strong> - ${player.info}
-                </div>`;
-            });
-            
-            modalContent += `</div>`;
-        }
-        
-        // 遊戲指示
-        if (this.playerRole.specialInfo.instructions) {
-            modalContent += `<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <h3>📋 遊戲提示</h3>
-                <p style="font-style: italic;">${this.playerRole.specialInfo.instructions}</p>
-            </div>`;
-        }
-        
-        modalContent += `<div style="display: flex; gap: 10px; justify-content: center; margin: 20px auto 0;">
-                        <button onclick="this.parentElement.parentElement.parentElement.style.display='none'" 
-                        style="background: #666; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                        關閉
-                    </button>
-                    <button id="roleConfirmedBtn"
-                        style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                        確認角色
-                    </button>
-                    </div></div>`;
-        
-        // 創建模態窗口
-        const modal = document.createElement('div');
-        modal.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
-            justify-content: center; align-items: center;
-        `;
-        modal.innerHTML = modalContent;
-        
-        // 點擊外部關閉
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        });
-        
-        document.body.appendChild(modal);
-    }
 
     // 處理遊戲動作
     handleGameAction(data) {
@@ -1450,25 +1405,6 @@ class MultiplayerAvalonGame {
         }, speed);
     }
 
-    // 確認角色
-    confirmRole() {
-        if (this.roleConfirmed) return;
-        
-        this.roleConfirmed = true;
-        this.socket.emit('roleConfirmed', {
-            roomCode: this.roomCode
-        });
-        
-        // 關閉模態窗口
-        const modals = document.querySelectorAll('div[style*="position: fixed"]');
-        modals.forEach(modal => {
-            if (modal.parentNode) {
-                modal.parentNode.removeChild(modal);
-            }
-        });
-        
-        this.showMessage('角色確認完成！', 'success');
-    }
 
     // 確認隊長並開始遊戲
     confirmLeaderAndStartGame() {
@@ -1837,6 +1773,16 @@ class MultiplayerAvalonGame {
         
         this.showScreen('roleSelectionScreen');
         this.initializeRoleSelection();
+    }
+
+    // 房主重新開始遊戲
+    hostRestartGame() {
+        if (confirm('確定要重新開始遊戲嗎？這將結束當前遊戲並回到角色選擇畫面。')) {
+            // 通知伺服器重新開始遊戲
+            this.socket.emit('hostRestartGame', {
+                roomCode: this.roomCode
+            });
+        }
     }
 
     // 返回大廳

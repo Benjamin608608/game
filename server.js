@@ -752,7 +752,7 @@ io.on('connection', (socket) => {
         // 更新遊戲狀態
         room.gameState = 'playing';
         room.gameData = {
-            currentPhase: 'roleReveal',
+            currentPhase: 'leaderSelection',
             currentMission: 1,
             currentLeader: null,
             selectedPlayers: [],
@@ -789,36 +789,16 @@ io.on('connection', (socket) => {
             });
         });
 
-        // 初始化角色確認狀態
-        room.gameData.roleConfirmations = new Set();
+        // 直接進入隊長選擇階段
+        setTimeout(() => {
+            io.to(roomCode).emit('startLeaderSelection', {
+                manualSelection: room.gameData.manualLeaderSelection
+            });
+        }, 1000);
         
         console.log(`房間 ${roomCode} 遊戲開始，${playerCount} 名玩家`);
     });
 
-    // 角色確認
-    socket.on('roleConfirmed', (data) => {
-        const { roomCode } = data;
-        const room = rooms.get(roomCode);
-        const playerInfo = players.get(socket.id);
-        
-        if (!room || !playerInfo || room.gameData.currentPhase !== 'roleReveal') return;
-        
-        // 記錄玩家已確認角色
-        room.gameData.roleConfirmations.add(socket.id);
-        
-        console.log(`${playerInfo.playerName} 確認了角色，已確認：${room.gameData.roleConfirmations.size}/${room.players.size}`);
-        
-        // 檢查是否所有玩家都確認了角色
-        if (room.gameData.roleConfirmations.size === room.players.size) {
-            // 所有玩家都確認了角色，進入隊長選擇階段
-            room.gameData.currentPhase = 'leaderSelection';
-            
-            io.to(roomCode).emit('startLeaderSelection', {
-                manualSelection: room.gameData.manualLeaderSelection
-            });
-            console.log(`房間 ${roomCode} 所有玩家確認角色完成，開始隊長選擇 (手動: ${room.gameData.manualLeaderSelection})`);
-        }
-    });
 
     // 隊伍投票
     socket.on('teamVote', (data) => {
@@ -1106,6 +1086,32 @@ io.on('connection', (socket) => {
             // 刺殺失敗
             endGame(room, io, true, `🛡️ ${player.role === '刺客' ? '刺客' : '摩甘娜'}沒有找到梅林！好人陣營勝利！\n\n❌ ${targetPlayer.name} 不是梅林！`);
         }
+    });
+
+    // 房主重新開始遊戲
+    socket.on('hostRestartGame', (data) => {
+        const { roomCode } = data;
+        const room = rooms.get(roomCode);
+        
+        if (!room || room.hostId !== socket.id) {
+            socket.emit('error', { message: '只有房主可以重新開始遊戲' });
+            return;
+        }
+        
+        // 重置房間狀態
+        room.gameState = 'waiting';
+        room.gameData = null;
+        
+        // 清除所有玩家的角色
+        room.players.forEach(player => {
+            player.role = null;
+            player.isEvil = false;
+        });
+        
+        // 通知所有玩家遊戲重新開始
+        io.to(roomCode).emit('gameRestarted');
+        
+        console.log(`房間 ${roomCode} 房主重新開始遊戲`);
     });
 
     // 遊戲動作處理
