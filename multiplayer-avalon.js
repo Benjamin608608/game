@@ -384,6 +384,10 @@ class MultiplayerAvalonGame {
                         // 恢復任務投票界面
                         this.showMissionVoting();
                         this.showMessage('請繼續進行任務投票', 'info');
+                    } else if (data.votingStatus.votingType === 'lakeLady') {
+                        // 恢復湖中女神界面，需要獲取可選目標
+                        this.requestLakeLadyTargets();
+                        this.showMessage('請繼續使用湖中女神查驗', 'info');
                     }
                 }, 1000);
             }
@@ -492,14 +496,30 @@ class MultiplayerAvalonGame {
 
     // 初始化重連機制
     initializeReconnection() {
-        // 保存遊戲狀態到localStorage
-        window.addEventListener('beforeunload', () => {
+        // 保存遊戲狀態到localStorage的函數
+        const saveGameState = () => {
             if (this.playerName && this.roomCode) {
                 localStorage.setItem('avalon_player_name', this.playerName);
                 localStorage.setItem('avalon_room_code', this.roomCode);
                 localStorage.setItem('avalon_is_host', this.isHost.toString());
+                localStorage.setItem('avalon_save_time', Date.now().toString());
+            }
+        };
+
+        // 多種事件觸發保存（針對手機優化）
+        window.addEventListener('beforeunload', saveGameState);
+        window.addEventListener('unload', saveGameState);
+        window.addEventListener('pagehide', saveGameState);
+
+        // 手機特定事件
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                saveGameState();
             }
         });
+
+        // 定期保存（以防萬一）
+        setInterval(saveGameState, 30000); // 每30秒保存一次
 
         // 頁面載入時嘗試重連
         this.attemptReconnection();
@@ -509,18 +529,30 @@ class MultiplayerAvalonGame {
     attemptReconnection() {
         const savedPlayerName = localStorage.getItem('avalon_player_name');
         const savedRoomCode = localStorage.getItem('avalon_room_code');
-        
+        const saveTime = localStorage.getItem('avalon_save_time');
+
         if (savedPlayerName && savedRoomCode && this.currentScreen === 'nameScreen') {
-            this.playerName = savedPlayerName;
-            this.roomCode = savedRoomCode;
-            
-            // 嘗試重連
-            this.socket.emit('reconnect', {
-                playerName: savedPlayerName,
-                roomCode: savedRoomCode
-            });
-            
-            this.showMessage('嘗試重新連接...', 'info');
+            // 檢查保存時間，如果超過5分鐘就不重連（可能遊戲已結束）
+            const now = Date.now();
+            const timeDiff = saveTime ? (now - parseInt(saveTime)) : 0;
+
+            if (timeDiff < 5 * 60 * 1000) { // 5分鐘內
+                this.playerName = savedPlayerName;
+                this.roomCode = savedRoomCode;
+
+                console.log(`嘗試重連：玩家 ${savedPlayerName}，房間 ${savedRoomCode}`);
+
+                // 嘗試重連
+                this.socket.emit('reconnect', {
+                    playerName: savedPlayerName,
+                    roomCode: savedRoomCode
+                });
+
+                this.showMessage('嘗試重新連接...', 'info');
+            } else {
+                console.log('保存時間過久，清理舊的重連數據');
+                this.clearConnectionInfo();
+            }
         }
     }
 
@@ -1275,6 +1307,13 @@ class MultiplayerAvalonGame {
     confirmLakeLady() {
         document.getElementById('lakeLadyResultSection').style.display = 'none';
         this.socket.emit('lakeLadyConfirm', {
+            roomCode: this.roomCode
+        });
+    }
+
+    // 請求湖中女神可選目標（用於重連恢復）
+    requestLakeLadyTargets() {
+        this.socket.emit('requestLakeLadyTargets', {
             roomCode: this.roomCode
         });
     }

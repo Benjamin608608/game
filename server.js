@@ -714,6 +714,10 @@ io.on('connection', (socket) => {
                 // 檢查玩家是否在當前任務隊伍中
                 needsVoting = room.gameData.selectedPlayers.includes(socket.id);
                 votingType = 'mission';
+            } else if (room.gameData.currentPhase === 'lakeLady') {
+                // 檢查玩家是否是湖中女神持有者
+                needsVoting = room.gameData.lakeLadyHolder === socket.id;
+                votingType = 'lakeLady';
             }
 
             socket.emit('gameReconnected', {
@@ -1153,6 +1157,32 @@ io.on('connection', (socket) => {
             // 已經是最後一個任務，遊戲應該已經結束
             console.log('湖中女神確認，但已是最後任務');
         }
+    });
+
+    // 請求湖中女神可選目標（重連用）
+    socket.on('requestLakeLadyTargets', (data) => {
+        const { roomCode } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'lakeLady') return;
+        if (room.gameData.lakeLadyHolder !== socket.id) return;
+
+        // 湖中女神持有者
+        const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
+
+        // 過濾可查驗的目標：排除自己和曾經持有過湖中女神的玩家
+        const availableTargets = Array.from(room.players.values())
+            .filter(p => p.id !== room.gameData.lakeLadyHolder &&
+                        !room.gameData.lakeLadyPreviousHolders.includes(p.id))
+            .map(p => p.name);
+
+        console.log(`重連恢復湖中女神界面，持有者：${holderPlayer.name}，可選目標：${availableTargets.join(', ')}`);
+
+        socket.emit('lakeLadyStart', {
+            holderName: holderPlayer.name,
+            availableTargets: availableTargets
+        });
     });
 
     // 確認隊伍
