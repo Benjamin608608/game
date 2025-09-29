@@ -1287,14 +1287,17 @@ class MultiplayerAvalonGame {
     }
 
     // 選擇湖中女神目標
-    selectLakeLadyTarget(targetName) {
+    selectLakeLadyTarget(targetName, event) {
         this.lakeLadyTarget = targetName;
 
         // 更新界面選中狀態
         document.querySelectorAll('.lake-lady-player').forEach(player => {
             player.classList.remove('selected');
         });
-        event.target.classList.add('selected');
+
+        if (event?.currentTarget) {
+            event.currentTarget.classList.add('selected');
+        }
 
         // 發送選擇
         this.socket.emit('lakeLadySelect', {
@@ -1383,12 +1386,12 @@ class MultiplayerAvalonGame {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'lake-lady-player';
             playerDiv.textContent = playerName;
-            playerDiv.addEventListener('click', () => {
-                this.selectLakeLadyTarget(playerName);
+            playerDiv.addEventListener('click', (event) => {
+                this.selectLakeLadyTarget(playerName, event);
             });
             playersDiv.appendChild(playerDiv);
         });
-        
+
         document.getElementById('lakeLadySection').style.display = 'block';
     }
 
