@@ -1197,10 +1197,6 @@ class MultiplayerAvalonGame {
         });
         event.target.classList.add('selected');
 
-        // 隱藏選擇界面，等待結果
-        document.getElementById('lakeLadySection').style.display = 'none';
-        this.showMessage(`正在查驗 ${targetName} 的身份...`, 'info');
-
         // 發送選擇
         this.socket.emit('lakeLadySelect', {
             roomCode: this.roomCode,
