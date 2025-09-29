@@ -62,8 +62,8 @@ function getMissionPlayerCount(playerCount, mission) {
         8: [3,4,4,5,5],
         9: [3,4,4,5,5],
         10: [3,4,4,5,5],
-        11: [3,4,4,5,5],
-        12: [3,4,4,5,5]
+        11: [3,4,5,6,6],
+        12: [3,4,5,6,6]
     };
     return missionConfigs[playerCount][mission - 1];
 }

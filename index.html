@@ -1101,6 +1101,50 @@
             margin-bottom: 15px;
         }
 
+        /* 圖標說明樣式 */
+        .icon-legend {
+            margin-top: 20px;
+            background: rgba(15, 12, 41, 0.6);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+
+        .icon-legend h4 {
+            color: #d4af37;
+            margin-bottom: 12px;
+            font-size: 1.1em;
+            text-align: center;
+        }
+
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .legend-icon {
+            font-size: 1.1em;
+            width: 20px;
+            text-align: center;
+        }
+
+        .legend-text {
+            font-family: 'Crimson Text', serif;
+            color: #f4f1e8;
+            opacity: 0.9;
+        }
+
         /* 響應式設計 - 角色選擇 */
         @media (max-width: 768px) {
             .role-selection-container {
@@ -1430,6 +1474,37 @@
                     <div class="vote-history" id="voteHistory">
                         <h4>投票記錄</h4>
                         <div class="vote-records" id="voteRecords"></div>
+                    </div>
+                    
+                    <!-- 圖標說明區 -->
+                    <div class="icon-legend">
+                        <h4>圖標說明</h4>
+                        <div class="legend-items">
+                            <div class="legend-item">
+                                <span class="legend-icon">👑</span>
+                                <span class="legend-text">隊長</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-icon">🏔️</span>
+                                <span class="legend-text">湖中女神</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-icon">🏠</span>
+                                <span class="legend-text">房主</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-icon">✅</span>
+                                <span class="legend-text">已選中</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-icon">👹</span>
+                                <span class="legend-text">已知邪惡</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-icon">✨</span>
+                                <span class="legend-text">法師身份</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
