@@ -545,7 +545,7 @@ function startAssassinationPhase(room, io) {
 // 結束遊戲
 function endGame(room, io, goodWins, message) {
     room.gameState = 'finished';
-    
+
     io.to(room.id).emit('gameEnded', {
         goodWins: goodWins,
         message: message,
@@ -554,6 +554,46 @@ function endGame(room, io, goodWins, message) {
             role: p.role
         }))
     });
+}
+
+// 從房間移除玩家的通用函數
+function removePlayerFromRoom(room, socketId, playerInfo, io, wasKicked = false) {
+    const playerName = playerInfo.playerName;
+    const roomCode = playerInfo.roomCode;
+
+    // 移除玩家
+    room.players.delete(socketId);
+    players.delete(socketId);
+
+    // 如果房主離開且還有其他玩家，轉移房主權限
+    if (room.hostId === socketId && room.players.size > 0) {
+        const newHost = room.players.values().next().value;
+        newHost.isHost = true;
+        room.hostId = newHost.id;
+
+        io.to(roomCode).emit('hostChanged', {
+            newHostId: newHost.id,
+            newHostName: newHost.name
+        });
+
+        console.log(`房主權限從 ${playerName} 轉移給 ${newHost.name}`);
+    }
+
+    // 通知其他玩家
+    io.to(roomCode).emit('playerLeft', {
+        playerId: socketId,
+        playerName: playerName,
+        wasKicked: wasKicked,
+        players: Array.from(room.players.values())
+    });
+
+    // 如果房間空了，刪除房間
+    if (room.players.size === 0) {
+        rooms.delete(roomCode);
+        console.log(`房間 ${roomCode} 已刪除（無玩家）`);
+    }
+
+    console.log(`玩家 ${playerName} 已從房間 ${roomCode} 移除${wasKicked ? '（被踢）' : ''}`);
 }
 
 // Socket.IO 連接處理
@@ -1158,51 +1198,86 @@ io.on('connection', (socket) => {
         });
     });
 
+    // 主動離開房間
+    socket.on('leaveRoom', (data) => {
+        const { roomCode, playerName } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+
+        if (!room || !playerInfo) return;
+
+        console.log(`玩家 ${playerName} 主動離開房間 ${roomCode}`);
+
+        // 設置標記，表示這是主動離開
+        socket.isLeavingRoom = true;
+
+        // 立即移除玩家
+        removePlayerFromRoom(room, socket.id, playerInfo, io, false);
+    });
+
+    // 房主踢人
+    socket.on('kickPlayer', (data) => {
+        const { roomCode, targetPlayerName } = data;
+        const room = rooms.get(roomCode);
+        const hostInfo = players.get(socket.id);
+
+        if (!room || !hostInfo || room.hostId !== socket.id) {
+            socket.emit('error', { message: '只有房主可以踢人' });
+            return;
+        }
+
+        // 找到被踢的玩家
+        const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetPlayerName);
+        if (!targetPlayer) {
+            socket.emit('error', { message: '找不到該玩家' });
+            return;
+        }
+
+        const targetPlayerInfo = players.get(targetPlayer.id);
+        if (!targetPlayerInfo) return;
+
+        console.log(`房主 ${hostInfo.playerName} 踢掉了玩家 ${targetPlayerName}`);
+
+        // 通知被踢的玩家
+        io.to(targetPlayer.id).emit('kicked', {
+            message: `您被房主踢出了房間`
+        });
+
+        // 立即移除玩家
+        removePlayerFromRoom(room, targetPlayer.id, targetPlayerInfo, io, true);
+    });
+
     // 斷線處理
     socket.on('disconnect', () => {
         const playerInfo = players.get(socket.id);
         if (playerInfo) {
             const room = rooms.get(playerInfo.roomCode);
             if (room) {
-                // 不立即刪除玩家，給予重連機會
-                console.log(`玩家 ${playerInfo.playerName} 斷線，保留30秒重連時間`);
-                
+                // 檢查是否為主動離開（通過標記判斷）
+                if (socket.isLeavingRoom) {
+                    // 主動離開，已經在leaveRoom事件中處理過了
+                    console.log(`玩家 ${playerInfo.playerName} 主動離開，斷線確認`);
+                    return;
+                }
+
+                // 意外斷線，給予重連機會
+                console.log(`玩家 ${playerInfo.playerName} 意外斷線，保留30秒重連時間`);
+
                 // 30秒後如果沒有重連，才真正移除玩家
                 setTimeout(() => {
                     const currentRoom = rooms.get(playerInfo.roomCode);
-                    if (currentRoom && currentRoom.players.has(socket.id)) {
+                    const currentPlayerInfo = players.get(socket.id);
+
+                    if (currentRoom && currentRoom.players.has(socket.id) && currentPlayerInfo) {
                         // 玩家沒有重連，移除玩家
-                        currentRoom.players.delete(socket.id);
-                        
-                        // 如果房主離開且還有其他玩家，轉移房主權限
-                        if (currentRoom.hostId === socket.id && currentRoom.players.size > 0) {
-                            const newHost = currentRoom.players.values().next().value;
-                            newHost.isHost = true;
-                            currentRoom.hostId = newHost.id;
-                            
-                            io.to(playerInfo.roomCode).emit('hostChanged', {
-                                newHostId: newHost.id,
-                                newHostName: newHost.name
-                            });
-                        }
-
-                        // 通知其他玩家
-                        io.to(playerInfo.roomCode).emit('playerLeft', {
-                            playerId: socket.id,
-                            playerName: playerInfo.playerName,
-                            players: Array.from(currentRoom.players.values())
-                        });
-
-                        // 如果房間空了，刪除房間
-                        if (currentRoom.players.size === 0) {
-                            rooms.delete(playerInfo.roomCode);
-                        }
-                        
-                        console.log(`玩家 ${playerInfo.playerName} 重連超時，已移除`);
+                        console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家`);
+                        removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, false);
                     }
                 }, 30000); // 30秒重連時間
+            } else {
+                // 房間不存在，直接清理玩家信息
+                players.delete(socket.id);
             }
-            players.delete(socket.id);
         }
         console.log('玩家離線:', socket.id);
     });

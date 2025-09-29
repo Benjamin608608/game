@@ -201,7 +201,10 @@ class MultiplayerAvalonGame {
             this.allPlayers = data.players;
             this.updatePlayersList();
             this.updateLobbyButtons(); // 更新按鈕狀態
-            this.showMessage(`${data.playerName} 離開了遊戲`, 'warning');
+            const message = data.wasKicked
+                ? `${data.playerName} 被房主踢出了遊戲`
+                : `${data.playerName} 離開了遊戲`;
+            this.showMessage(message, 'warning');
         });
 
         // 房主變更
@@ -214,6 +217,16 @@ class MultiplayerAvalonGame {
             this.updatePlayersList();
             this.updateLobbyButtons(); // 更新按鈕狀態
             this.showMessage(`${data.newHostName} 成為新的房主`, 'success');
+        });
+
+        // 被踢出房間
+        this.socket.on('kicked', (data) => {
+            this.clearConnectionInfo(); // 清理重連信息
+            this.showMessage(data.message, 'error');
+            setTimeout(() => {
+                this.socket.disconnect();
+                location.reload();
+            }, 2000);
         });
 
         // 遊戲開始
@@ -558,8 +571,33 @@ class MultiplayerAvalonGame {
     leaveRoom() {
         if (confirm('確定要離開房間嗎？')) {
             this.clearConnectionInfo(); // 清理重連信息
-            this.socket.disconnect();
-            location.reload();
+
+            // 發送明確的離開房間事件，讓伺服器立即移除玩家
+            this.socket.emit('leaveRoom', {
+                roomCode: this.roomCode,
+                playerName: this.playerName
+            });
+
+            // 延遲一點再斷開連接，確保伺服器收到離開事件
+            setTimeout(() => {
+                this.socket.disconnect();
+                location.reload();
+            }, 100);
+        }
+    }
+
+    // 踢掉玩家（房主功能）
+    kickPlayer(targetPlayerName) {
+        if (!this.isHost) {
+            this.showMessage('只有房主可以踢人', 'error');
+            return;
+        }
+
+        if (confirm(`確定要踢掉 ${targetPlayerName} 嗎？`)) {
+            this.socket.emit('kickPlayer', {
+                roomCode: this.roomCode,
+                targetPlayerName: targetPlayerName
+            });
         }
     }
 
@@ -831,8 +869,22 @@ class MultiplayerAvalonGame {
                     ${this.isReordering ? `<span style="opacity: 0.6;">${index + 1}.</span> ` : ''}
                     ${player.name}
                 </div>
-                ${player.isHost ? '<div class="host-badge">房主</div>' : ''}
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    ${player.isHost ? '<div class="host-badge">房主</div>' : ''}
+                    ${this.isHost && !player.isHost && !this.isReordering ? `<button class="btn danger kick-btn" data-player-name="${player.name}" style="font-size: 0.8em; padding: 4px 8px;">踢出</button>` : ''}
+                </div>
             `;
+
+            // 為踢人按鈕添加事件監聽器
+            if (this.isHost && !player.isHost && !this.isReordering) {
+                const kickBtn = playerItem.querySelector('.kick-btn');
+                if (kickBtn) {
+                    kickBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.kickPlayer(player.name);
+                    });
+                }
+            }
             
             playersList.appendChild(playerItem);
         });
