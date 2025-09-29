@@ -378,6 +378,20 @@ class MultiplayerAvalonGame {
             }
         });
 
+        // 刺殺階段事件
+        this.socket.on('assassinationStart', (data) => {
+            this.showAssassinationInterface(data.targets, data.isAssassin);
+        });
+
+        this.socket.on('waitingForAssassination', (data) => {
+            this.showMessage(`${data.assassinName}（${data.isAssassin ? '刺客' : '摩甘娜'}）正在選擇刺殺目標...`, 'info');
+        });
+
+        // 遊戲結束事件
+        this.socket.on('gameEnded', (data) => {
+            this.showGameEndScreen(data.goodWins, data.message, data.roles);
+        });
+
         // 錯誤處理
         this.socket.on('error', (data) => {
             this.showMessage(data.message, 'error');
@@ -541,6 +555,7 @@ class MultiplayerAvalonGame {
         // 遊戲選項
         document.getElementById('enable-lake-lady').checked = true;
         document.getElementById('show-mordred-identity').checked = false;
+        document.getElementById('morgana-assassin-ability').checked = false;
         
         this.updateRoleCount();
     }
@@ -632,13 +647,15 @@ class MultiplayerAvalonGame {
         const customRoles = this.getSelectedRoles();
         const enableLakeLady = document.getElementById('enable-lake-lady').checked;
         const showMordredIdentity = document.getElementById('show-mordred-identity').checked;
+        const morganaAssassinAbility = document.getElementById('morgana-assassin-ability').checked;
         
         this.socket.emit('startGame', {
             roomCode: this.roomCode,
             useDefaultRoles: false,
             customRoles: customRoles,
             enableLakeLady: enableLakeLady,
-            showMordredIdentity: showMordredIdentity
+            showMordredIdentity: showMordredIdentity,
+            morganaAssassinAbility: morganaAssassinAbility
         });
     }
 
@@ -1623,6 +1640,116 @@ class MultiplayerAvalonGame {
         while (voteRecords.children.length > 10) {
             voteRecords.removeChild(voteRecords.lastChild);
         }
+    }
+
+    // 顯示刺殺界面
+    showAssassinationInterface(targets, isAssassin) {
+        this.hideAllVotingSections();
+        
+        const gameActions = document.getElementById('gameActions');
+        gameActions.innerHTML = `
+            <div style="background: rgba(244, 67, 54, 0.2); padding: 20px; border-radius: 10px; border: 2px solid #f44336;">
+                <h3 style="color: #f44336; text-align: center; margin-bottom: 15px;">
+                    🗡️ ${isAssassin ? '刺客' : '摩甘娜'}刺殺階段
+                </h3>
+                <p style="text-align: center; margin-bottom: 20px;">
+                    選擇一名好人玩家進行刺殺。如果刺中梅林，邪惡陣營勝利！
+                </p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                    ${targets.map(target => `
+                        <button class="btn danger" onclick="window.game.assassinate('${target.id}')" 
+                                style="padding: 15px; font-size: 1.1em;">
+                            🎯 刺殺 ${target.name}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        
+        this.showMessage(`你是${isAssassin ? '刺客' : '摩甘娜'}！請選擇刺殺目標`, 'error');
+    }
+
+    // 執行刺殺
+    assassinate(targetId) {
+        if (confirm('確定要刺殺這名玩家嗎？此決定無法撤回！')) {
+            this.socket.emit('assassinate', {
+                roomCode: this.roomCode,
+                targetId: targetId
+            });
+        }
+    }
+
+    // 顯示遊戲結束畫面
+    showGameEndScreen(goodWins, message, roles) {
+        // 創建遊戲結束模態窗口
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); z-index: 2000; display: flex; 
+            justify-content: center; align-items: center;
+        `;
+        
+        const winnerColor = goodWins ? '#4CAF50' : '#f44336';
+        const winnerText = goodWins ? '好人陣營勝利！' : '邪惡陣營勝利！';
+        
+        modal.innerHTML = `
+            <div style="background: white; color: #333; padding: 40px; border-radius: 20px; max-width: 600px; max-height: 80vh; overflow-y: auto; text-align: center;">
+                <h1 style="color: ${winnerColor}; font-size: 2.5em; margin-bottom: 20px;">
+                    🎉 ${winnerText}
+                </h1>
+                <div style="background: #f0f0f0; padding: 20px; border-radius: 10px; margin: 20px 0; white-space: pre-line;">
+                    ${message}
+                </div>
+                
+                <h3 style="margin: 30px 0 15px 0;">角色揭示</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 20px 0;">
+                    ${roles.map(player => {
+                        const isEvil = ['莫德雷德', '刺客', '摩甘娜', '爪牙', '奧伯倫'].includes(player.role);
+                        return `
+                            <div style="background: ${isEvil ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)'}; 
+                                        border: 2px solid ${isEvil ? '#f44336' : '#4CAF50'}; 
+                                        padding: 15px; border-radius: 8px;">
+                                <div style="font-weight: bold; margin-bottom: 5px;">${player.name}</div>
+                                <div style="color: ${isEvil ? '#f44336' : '#4CAF50'};">${player.role}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                
+                <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
+                    <button onclick="window.game.restartGame()" 
+                            style="background: #4CAF50; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
+                        🔄 再來一局
+                    </button>
+                    <button onclick="window.game.backToLobby()" 
+                            style="background: #2196F3; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
+                        🏠 返回大廳
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        this.gameEndModal = modal;
+    }
+
+    // 重新開始遊戲
+    restartGame() {
+        if (this.gameEndModal) {
+            document.body.removeChild(this.gameEndModal);
+            this.gameEndModal = null;
+        }
+        this.showScreen('roleSelectionScreen');
+        this.initializeRoleSelection();
+    }
+
+    // 返回大廳
+    backToLobby() {
+        if (this.gameEndModal) {
+            document.body.removeChild(this.gameEndModal);
+            this.gameEndModal = null;
+        }
+        this.showScreen('lobbyScreen');
     }
 }
 

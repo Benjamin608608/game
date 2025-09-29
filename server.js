@@ -346,13 +346,29 @@ function processMissionVoteResult(room, io) {
     if (missionSuccess) {
         const successCount = room.gameData.missionResults.filter(r => r).length;
         if (successCount >= 3) {
-            // 好人陣營完成3個任務，進入刺殺階段
-            io.to(room.id).emit('voteResult', {
-                message: '🎉 好人陣營完成了3個任務！\n⚔️ 進入刺殺階段...',
-                success: true
-            });
-            room.gameData.currentPhase = 'assassination';
-            return;
+            // 好人陣營完成3個任務，檢查是否需要進入刺殺階段
+            const hasAssassin = Array.from(room.players.values()).some(p => p.role === '刺客');
+            const hasMorganaWithAbility = room.gameData.morganaAssassinAbility && 
+                                        Array.from(room.players.values()).some(p => p.role === '摩甘娜');
+            
+            if (hasAssassin || hasMorganaWithAbility) {
+                // 有刺客或摩甘娜有刺殺能力，進入刺殺階段
+                io.to(room.id).emit('voteResult', {
+                    message: '🎉 好人陣營完成了3個任務！\n⚔️ 進入刺殺階段...',
+                    success: true
+                });
+                room.gameData.currentPhase = 'assassination';
+                
+                // 通知刺殺階段開始
+                setTimeout(() => {
+                    startAssassinationPhase(room, io);
+                }, 2000);
+                return;
+            } else {
+                // 沒有刺客且摩甘娜沒有刺殺能力，好人直接勝利
+                endGame(room, io, true, '🎉 好人陣營完成了3個任務！\n✅ 沒有刺客威脅，好人陣營勝利！');
+                return;
+            }
         }
     } else {
         const failCount = room.gameData.missionResults.filter(r => !r).length;
@@ -400,8 +416,11 @@ function startLakeLady(room, io) {
     
     // 湖中女神持有者在遊戲開始時就已經設定（第一個隊長的前一位）
     const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
+    
+    // 過濾可查驗的目標：排除自己和曾經持有過湖中女神的玩家
     const availableTargets = Array.from(room.players.values())
-        .filter(p => p.id !== room.gameData.lakeLadyHolder)
+        .filter(p => p.id !== room.gameData.lakeLadyHolder && 
+                    !room.gameData.lakeLadyPreviousHolders.includes(p.id))
         .map(p => p.name);
     
     io.to(room.id).emit('lakeLadyStart', {
@@ -460,6 +479,42 @@ function nextLeader(room) {
     const playerOrder = room.gameData.playersOrder;
     const currentIndex = playerOrder.indexOf(room.gameData.currentLeader);
     room.gameData.currentLeader = playerOrder[(currentIndex + 1) % playerOrder.length];
+}
+
+// 開始刺殺階段
+function startAssassinationPhase(room, io) {
+    const assassin = Array.from(room.players.values()).find(p => p.role === '刺客');
+    const morganaWithAbility = room.gameData.morganaAssassinAbility ? 
+        Array.from(room.players.values()).find(p => p.role === '摩甘娜') : null;
+    
+    let assassinPlayer = assassin || morganaWithAbility;
+    
+    if (!assassinPlayer) {
+        // 理論上不應該發生，但以防萬一
+        endGame(room, io, true, '🎉 好人陣營勝利！沒有可以刺殺的角色。');
+        return;
+    }
+    
+    // 獲取可以刺殺的目標（好人陣營）
+    const goodPlayers = Array.from(room.players.values())
+        .filter(p => !p.isEvil)
+        .map(p => ({ id: p.id, name: p.name }));
+    
+    // 通知刺客/摩甘娜選擇刺殺目標
+    io.to(assassinPlayer.id).emit('assassinationStart', {
+        targets: goodPlayers,
+        isAssassin: assassinPlayer.role === '刺客'
+    });
+    
+    // 通知其他玩家等待刺殺
+    room.players.forEach((player, socketId) => {
+        if (socketId !== assassinPlayer.id) {
+            io.to(socketId).emit('waitingForAssassination', {
+                assassinName: assassinPlayer.name,
+                isAssassin: assassinPlayer.role === '刺客'
+            });
+        }
+    });
 }
 
 // 結束遊戲
@@ -638,7 +693,7 @@ io.on('connection', (socket) => {
 
     // 開始遊戲
     socket.on('startGame', (data) => {
-        const { roomCode, useDefaultRoles, customRoles, enableLakeLady, showMordredIdentity } = data;
+        const { roomCode, useDefaultRoles, customRoles, enableLakeLady, showMordredIdentity, morganaAssassinAbility } = data;
         const room = rooms.get(roomCode);
 
         if (!room || room.hostId !== socket.id) {
@@ -693,8 +748,10 @@ io.on('connection', (socket) => {
             consecutiveRejects: 0,
             enableLakeLady: enableLakeLady !== false,
             showMordredIdentity: showMordredIdentity === true,
+            morganaAssassinAbility: morganaAssassinAbility === true,
             lakeLadyHolder: null,
             lakeLadyUsed: [],
+            lakeLadyPreviousHolders: [], // 記錄曾經持有過湖中女神的玩家
             playersOrder: playersArray.map(p => p.id) // 保存玩家順序
         };
 
@@ -756,7 +813,7 @@ io.on('connection', (socket) => {
         if (!room || !playerInfo || room.gameData.currentPhase !== 'teamVote') return;
         
         // 記錄投票
-        room.gameData.votes.push({ playerId: socket.id, vote });
+        room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
         
         // 通知投票更新
         io.to(roomCode).emit('voteUpdate', {
@@ -783,7 +840,7 @@ io.on('connection', (socket) => {
         if (!room.gameData.selectedPlayers.includes(socket.id)) return;
         
         // 記錄投票
-        room.gameData.votes.push({ playerId: socket.id, vote });
+        room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
         
         // 通知投票更新
         io.to(roomCode).emit('voteUpdate', {
@@ -810,6 +867,12 @@ io.on('connection', (socket) => {
         const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetName);
         if (!targetPlayer) return;
         
+        // 檢查目標是否可以被查驗（不能是曾經持有過湖中女神的玩家）
+        if (room.gameData.lakeLadyPreviousHolders.includes(targetPlayer.id)) {
+            socket.emit('error', { message: '該玩家曾經持有過湖中女神，不能被查驗' });
+            return;
+        }
+        
         // 發送結果給湖中女神持有者
         io.to(socket.id).emit('lakeLadyResult', {
             holderName: playerInfo.playerName,
@@ -824,11 +887,17 @@ io.on('connection', (socket) => {
             isEvil: null // 其他玩家不知道結果
         });
         
+        // 記錄當前持有者為曾經持有過湖中女神的玩家
+        if (!room.gameData.lakeLadyPreviousHolders.includes(socket.id)) {
+            room.gameData.lakeLadyPreviousHolders.push(socket.id);
+        }
+        
         // 將湖中女神傳遞給被查驗的玩家
         room.gameData.lakeLadyHolder = targetPlayer.id;
         room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
         
         console.log(`湖中女神從 ${playerInfo.playerName} 傳遞給 ${targetName}`);
+        console.log(`曾經持有過湖中女神的玩家：${room.gameData.lakeLadyPreviousHolders.map(id => room.players.get(id)?.name).join(', ')}`);
     });
 
     // 更新玩家順序
@@ -898,6 +967,9 @@ io.on('connection', (socket) => {
         const lakeLadyIndex = (leaderIndex - 1 + playerOrder.length) % playerOrder.length;
         room.gameData.lakeLadyHolder = playerOrder[lakeLadyIndex];
         
+        // 記錄初始湖中女神持有者
+        room.gameData.lakeLadyPreviousHolders.push(room.gameData.lakeLadyHolder);
+        
         console.log(`玩家順序：${playerOrder.map(id => room.players.get(id)?.name).join(' -> ')}`);
         console.log(`隊長位置：${leaderIndex}，湖中女神位置：${lakeLadyIndex}`);
         
@@ -953,6 +1025,34 @@ io.on('connection', (socket) => {
         });
         
         console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')}`);
+    });
+
+    // 刺殺選擇
+    socket.on('assassinate', (data) => {
+        const { roomCode, targetId } = data;
+        const room = rooms.get(roomCode);
+        const playerInfo = players.get(socket.id);
+        
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'assassination') return;
+        
+        // 檢查是否是刺客或有刺殺能力的摩甘娜
+        const player = room.players.get(socket.id);
+        const canAssassinate = player.role === '刺客' || 
+                              (player.role === '摩甘娜' && room.gameData.morganaAssassinAbility);
+        
+        if (!canAssassinate) return;
+        
+        const targetPlayer = room.players.get(targetId);
+        if (!targetPlayer || targetPlayer.isEvil) return;
+        
+        // 執行刺殺
+        if (targetPlayer.role === '梅林') {
+            // 刺殺成功
+            endGame(room, io, false, `🗡️ ${player.role === '刺客' ? '刺客' : '摩甘娜'}成功刺殺了梅林！邪惡陣營勝利！\n\n🎯 ${targetPlayer.name} 就是梅林！`);
+        } else {
+            // 刺殺失敗
+            endGame(room, io, true, `🛡️ ${player.role === '刺客' ? '刺客' : '摩甘娜'}沒有找到梅林！好人陣營勝利！\n\n❌ ${targetPlayer.name} 不是梅林！`);
+        }
     });
 
     // 遊戲動作處理
