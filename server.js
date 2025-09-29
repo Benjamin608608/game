@@ -31,11 +31,39 @@ app.get('/', (req, res) => {
 
 // 健康檢查端點
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
+    res.json({
+        status: 'ok',
         message: '阿瓦隆遊戲伺服器運行正常',
         rooms: rooms.size,
         players: players.size,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// 管理端點：查看所有房間信息（包含IP地址）
+app.get('/admin/rooms', (req, res) => {
+    const roomsInfo = [];
+
+    rooms.forEach((room, roomCode) => {
+        const playersInfo = Array.from(room.players.values()).map(player => ({
+            id: player.id,
+            name: player.name,
+            isHost: player.isHost,
+            ipAddress: player.ipAddress,
+            role: player.role
+        }));
+
+        roomsInfo.push({
+            roomCode: roomCode,
+            gameState: room.gameState,
+            playerCount: room.players.size,
+            players: playersInfo
+        });
+    });
+
+    res.json({
+        totalRooms: rooms.size,
+        rooms: roomsInfo,
         timestamp: new Date().toISOString()
     });
 });
@@ -596,32 +624,67 @@ function removePlayerFromRoom(room, socketId, playerInfo, io, wasKicked = false)
     console.log(`玩家 ${playerName} 已從房間 ${roomCode} 移除${wasKicked ? '（被踢）' : ''}`);
 }
 
+// 獲取客戶端真實IP地址的函數
+function getClientIP(socket) {
+    // 嘗試從不同的header中獲取真實IP
+    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    const realIP = socket.handshake.headers['x-real-ip'];
+    const remoteIP = socket.handshake.address;
+
+    // 處理x-forwarded-for（可能包含多個IP，取第一個）
+    if (forwarded) {
+        return forwarded.split(',')[0].trim();
+    }
+
+    // 使用x-real-ip
+    if (realIP) {
+        return realIP;
+    }
+
+    // 使用直接連接IP
+    if (remoteIP) {
+        // 移除IPv6映射的IPv4前綴
+        return remoteIP.replace(/^::ffff:/, '');
+    }
+
+    return 'unknown';
+}
+
 // Socket.IO 連接處理
 io.on('connection', (socket) => {
-    console.log('玩家連接:', socket.id);
+    const clientIP = getClientIP(socket);
+    console.log('玩家連接:', socket.id, 'IP:', clientIP);
 
     // 重連處理
     socket.on('reconnect', (data) => {
         const { playerName, roomCode } = data;
         const room = rooms.get(roomCode);
-        
+        const clientIP = getClientIP(socket);
+
         if (!room) {
             socket.emit('error', { message: '房間不存在，可能已結束' });
             return;
         }
-        
+
         // 檢查玩家是否在房間中
         const existingPlayer = Array.from(room.players.values()).find(p => p.name === playerName);
         if (!existingPlayer) {
             socket.emit('error', { message: '您不在此房間中' });
             return;
         }
+
+        // 驗證IP地址（可選的額外安全檢查）
+        if (existingPlayer.ipAddress && existingPlayer.ipAddress !== clientIP) {
+            console.log(`重連IP不匹配: ${playerName}, 原IP: ${existingPlayer.ipAddress}, 新IP: ${clientIP}`);
+            // 可以選擇是否要拒絕重連，這裡我們只記錄但允許重連
+        }
         
-        // 更新玩家連接ID
+        // 更新玩家連接ID和IP地址
         room.players.delete(existingPlayer.id);
         existingPlayer.id = socket.id;
+        existingPlayer.ipAddress = clientIP; // 更新IP地址
         room.players.set(socket.id, existingPlayer);
-        
+
         // 更新玩家映射
         players.set(socket.id, { roomCode, playerName });
         
@@ -666,7 +729,8 @@ io.on('connection', (socket) => {
     // 創建房間
     socket.on('createRoom', (data) => {
         const { playerName, roomCode } = data;
-        
+        const clientIP = getClientIP(socket);
+
         if (rooms.has(roomCode)) {
             socket.emit('error', { message: '房間號已存在，請選擇其他房間號' });
             return;
@@ -685,7 +749,8 @@ io.on('connection', (socket) => {
             id: socket.id,
             name: playerName,
             isHost: true,
-            role: null
+            role: null,
+            ipAddress: clientIP
         });
 
         rooms.set(roomCode, room);
@@ -704,7 +769,8 @@ io.on('connection', (socket) => {
     // 加入房間
     socket.on('joinRoom', (data) => {
         const { playerName, roomCode } = data;
-        
+        const clientIP = getClientIP(socket);
+
         const room = rooms.get(roomCode);
         if (!room) {
             socket.emit('error', { message: '房間不存在' });
@@ -733,7 +799,8 @@ io.on('connection', (socket) => {
             id: socket.id,
             name: playerName,
             isHost: false,
-            role: null
+            role: null,
+            ipAddress: clientIP
         });
 
         players.set(socket.id, { roomCode, playerName });
