@@ -426,21 +426,26 @@ function shouldUseLakeLady(room) {
 // 開始湖中女神階段
 function startLakeLady(room, io) {
     room.gameData.currentPhase = 'lakeLady';
-    
+
+    // 清空之前的湖中女神選擇記錄
+    room.gameData.lakeLadySelectedTarget = null;
+
     // 湖中女神持有者在遊戲開始時就已經設定（第一個隊長的前一位）
     const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
-    
+
     // 過濾可查驗的目標：排除自己和曾經持有過湖中女神的玩家
     const availableTargets = Array.from(room.players.values())
-        .filter(p => p.id !== room.gameData.lakeLadyHolder && 
+        .filter(p => p.id !== room.gameData.lakeLadyHolder &&
                     !room.gameData.lakeLadyPreviousHolders.includes(p.id))
         .map(p => p.name);
-    
+
+    console.log(`湖中女神階段開始，持有者：${holderPlayer.name}，可選目標：${availableTargets.join(', ')}`);
+
     io.to(room.id).emit('lakeLadyStart', {
         holderName: holderPlayer.name,
         availableTargets: availableTargets
     });
-    
+
     // 通知所有玩家當前遊戲狀態
     io.to(room.id).emit('gameStateUpdate', {
         currentPhase: 'lakeLady',
@@ -866,55 +871,40 @@ io.on('connection', (socket) => {
         const { roomCode, targetName } = data;
         const room = rooms.get(roomCode);
         const playerInfo = players.get(socket.id);
-        
+
         if (!room || !playerInfo || room.gameData.currentPhase !== 'lakeLady') return;
         if (room.gameData.lakeLadyHolder !== socket.id) return;
-        
+
         const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetName);
         if (!targetPlayer) return;
-        
+
         // 檢查目標是否可以被查驗（不能是曾經持有過湖中女神的玩家）
         if (room.gameData.lakeLadyPreviousHolders.includes(targetPlayer.id)) {
             socket.emit('error', { message: '該玩家曾經持有過湖中女神，不能被查驗' });
             return;
         }
-        
+
+        // 記錄湖中女神查驗的相關信息
+        room.gameData.lakeLadySelectedTarget = {
+            targetName: targetName,
+            targetId: targetPlayer.id,
+            isEvil: targetPlayer.isEvil
+        };
+
         // 發送結果給湖中女神持有者
         io.to(socket.id).emit('lakeLadyResult', {
             holderName: playerInfo.playerName,
             targetName: targetName,
             isEvil: targetPlayer.isEvil
         });
-        
+
         // 通知其他玩家（包括湖中女神持有者）
         io.to(roomCode).emit('lakeLadyPublicResult', {
             holderName: playerInfo.playerName,
             targetName: targetName
         });
-        
-        // 添加湖中女神查驗記錄
-        io.to(roomCode).emit('voteResult', {
-            message: `🏔️ 湖中女神查驗：${playerInfo.playerName} 查驗了 ${targetName}`,
-            success: true,
-            voteDetails: {
-                type: 'lakeLady',
-                holderName: playerInfo.playerName,
-                targetName: targetName,
-                mission: room.gameData.currentMission
-            }
-        });
-        
-        // 記錄當前持有者為曾經持有過湖中女神的玩家
-        if (!room.gameData.lakeLadyPreviousHolders.includes(socket.id)) {
-            room.gameData.lakeLadyPreviousHolders.push(socket.id);
-        }
-        
-        // 將湖中女神傳遞給被查驗的玩家
-        room.gameData.lakeLadyHolder = targetPlayer.id;
-        room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
-        
-        console.log(`湖中女神從 ${playerInfo.playerName} 傳遞給 ${targetName}`);
-        console.log(`曾經持有過湖中女神的玩家：${room.gameData.lakeLadyPreviousHolders.map(id => room.players.get(id)?.name).join(', ')}`);
+
+        console.log(`湖中女神 ${playerInfo.playerName} 選擇查驗 ${targetName}，結果：${targetPlayer.isEvil ? '邪惡' : '好人'}`);
     });
 
     // 更新玩家順序
@@ -1008,9 +998,39 @@ io.on('connection', (socket) => {
     socket.on('lakeLadyConfirm', (data) => {
         const { roomCode } = data;
         const room = rooms.get(roomCode);
-        
-        if (!room || room.gameData.currentPhase !== 'lakeLady') return;
-        
+        const playerInfo = players.get(socket.id);
+
+        if (!room || !playerInfo || room.gameData.currentPhase !== 'lakeLady') return;
+        if (room.gameData.lakeLadyHolder !== socket.id) return;
+
+        // 確認湖中女神已查驗完畢，處理傳遞邏輯
+        const targetInfo = room.gameData.lakeLadySelectedTarget;
+        if (!targetInfo) return;
+
+        // 添加湖中女神查驗記錄
+        io.to(roomCode).emit('voteResult', {
+            message: `🏔️ 湖中女神查驗：${playerInfo.playerName} 查驗了 ${targetInfo.targetName}`,
+            success: true,
+            voteDetails: {
+                type: 'lakeLady',
+                holderName: playerInfo.playerName,
+                targetName: targetInfo.targetName,
+                mission: room.gameData.currentMission
+            }
+        });
+
+        // 記錄當前持有者為曾經持有過湖中女神的玩家
+        if (!room.gameData.lakeLadyPreviousHolders.includes(socket.id)) {
+            room.gameData.lakeLadyPreviousHolders.push(socket.id);
+        }
+
+        // 將湖中女神傳遞給被查驗的玩家
+        room.gameData.lakeLadyHolder = targetInfo.targetId;
+        room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
+
+        console.log(`湖中女神從 ${playerInfo.playerName} 傳遞給 ${targetInfo.targetName}`);
+        console.log(`曾經持有過湖中女神的玩家：${room.gameData.lakeLadyPreviousHolders.map(id => room.players.get(id)?.name).join(', ')}`);
+
         // 檢查是否還有後續任務
         if (room.gameData.currentMission < 5) {
             // 繼續遊戲流程

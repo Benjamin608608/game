@@ -1190,13 +1190,17 @@ class MultiplayerAvalonGame {
     // 選擇湖中女神目標
     selectLakeLadyTarget(targetName) {
         this.lakeLadyTarget = targetName;
-        
+
         // 更新界面選中狀態
         document.querySelectorAll('.lake-lady-player').forEach(player => {
             player.classList.remove('selected');
         });
         event.target.classList.add('selected');
-        
+
+        // 隱藏選擇界面，等待結果
+        document.getElementById('lakeLadySection').style.display = 'none';
+        this.showMessage(`正在查驗 ${targetName} 的身份...`, 'info');
+
         // 發送選擇
         this.socket.emit('lakeLadySelect', {
             roomCode: this.roomCode,
