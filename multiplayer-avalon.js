@@ -263,7 +263,7 @@ class MultiplayerAvalonGame {
 
         // 投票相關事件
         this.socket.on('teamVotingStart', (data) => {
-            this.showTeamVoting(data.teamMembers, data.consecutiveRejects);
+            this.showTeamVoting(data.teamMembers, data.consecutiveRejects, data.leaderName);
         });
 
         this.socket.on('missionVotingStart', (data) => {
@@ -379,9 +379,12 @@ class MultiplayerAvalonGame {
         this.socket.on('lakeLadyResult', (data) => {
             if (data.holderName === this.playerName) {
                 this.showLakeLadyResult(data.targetName, data.isEvil);
-            } else {
-                this.showMessage(`${data.holderName} 查看了 ${data.targetName} 的身份`, 'info');
             }
+        });
+
+        // 湖中女神公開結果（所有玩家都能看到誰被查驗了）
+        this.socket.on('lakeLadyPublicResult', (data) => {
+            this.showMessage(`🏔️ 湖中女神：${data.holderName} 查驗了 ${data.targetName} 的身份`, 'info');
         });
 
         // 刺殺階段事件
@@ -1226,18 +1229,22 @@ class MultiplayerAvalonGame {
     }
 
     // 顯示隊伍投票界面
-    showTeamVoting(teamMembers, consecutiveRejects = 0) {
+    showTeamVoting(teamMembers, consecutiveRejects = 0, leaderName = '') {
         this.hideAllVotingSections();
         
         const selectedTeamDiv = document.getElementById('selectedTeam');
-        selectedTeamDiv.innerHTML = '<h4>選定的隊伍成員：</h4>';
-        
-        teamMembers.forEach(memberName => {
-            const memberDiv = document.createElement('div');
-            memberDiv.className = 'team-member';
-            memberDiv.textContent = memberName;
-            selectedTeamDiv.appendChild(memberDiv);
-        });
+        selectedTeamDiv.innerHTML = `
+            <h4>隊長 ${leaderName} 選定的隊伍成員：</h4>
+            <div style="background: rgba(33, 150, 243, 0.2); padding: 15px; border-radius: 8px; margin: 10px 0; border: 2px solid #2196F3;">
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+                    ${teamMembers.map(memberName => 
+                        `<div class="team-member" style="background: #2196F3; color: white; padding: 8px 15px; border-radius: 20px; font-weight: bold;">
+                            ${memberName}
+                        </div>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
         
         // 顯示拒絕次數信息
         if (consecutiveRejects > 0) {
@@ -1257,6 +1264,9 @@ class MultiplayerAvalonGame {
         document.getElementById('teamVotingSection').style.display = 'block';
         
         this.currentVote = null; // 重置投票狀態
+        
+        // 顯示投票提示
+        this.showMessage(`隊長 ${leaderName} 選擇了隊員：${teamMembers.join('、')}。請投票決定是否贊成這個隊伍組合！`, 'info');
     }
 
     // 顯示任務投票界面
@@ -1330,12 +1340,11 @@ class MultiplayerAvalonGame {
 
     // 手動選擇隊長
     selectManualLeader(playerId) {
-        if (confirm('確定選擇這名玩家作為第一個隊長嗎？')) {
-            this.socket.emit('confirmLeader', {
-                roomCode: this.roomCode,
-                leaderId: playerId
-            });
-        }
+        // 直接選擇，不需要確認
+        this.socket.emit('confirmLeader', {
+            roomCode: this.roomCode,
+            leaderId: playerId
+        });
     }
 
     // 顯示轉盤抽選隊長

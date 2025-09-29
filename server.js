@@ -896,11 +896,10 @@ io.on('connection', (socket) => {
             isEvil: targetPlayer.isEvil
         });
         
-        // 通知其他玩家
-        socket.broadcast.to(roomCode).emit('lakeLadyResult', {
+        // 通知其他玩家（包括湖中女神持有者）
+        io.to(roomCode).emit('lakeLadyPublicResult', {
             holderName: playerInfo.playerName,
-            targetName: targetName,
-            isEvil: null // 其他玩家不知道結果
+            targetName: targetName
         });
         
         // 記錄當前持有者為曾經持有過湖中女神的玩家
@@ -1010,9 +1009,14 @@ io.on('connection', (socket) => {
         
         if (!room || room.gameData.currentPhase !== 'lakeLady') return;
         
-        // 轉移湖中女神給被查看的玩家（如果還有後續任務）
-        // 繼續遊戲流程
-        continueGameAfterLakeLady(room, io);
+        // 檢查是否還有後續任務
+        if (room.gameData.currentMission < 5) {
+            // 繼續遊戲流程
+            continueGameAfterLakeLady(room, io);
+        } else {
+            // 已經是最後一個任務，遊戲應該已經結束
+            console.log('湖中女神確認，但已是最後任務');
+        }
     });
 
     // 確認隊伍
@@ -1065,11 +1069,12 @@ io.on('connection', (socket) => {
             room.gameData.currentPhase = 'teamVote';
             room.gameData.votes = [];
             
-            // 通知所有玩家開始隊伍投票
-            io.to(roomCode).emit('teamVotingStart', {
-                teamMembers: teamMemberNames,
-                consecutiveRejects: room.gameData.consecutiveRejects
-            });
+        // 通知所有玩家開始隊伍投票
+        io.to(roomCode).emit('teamVotingStart', {
+            teamMembers: teamMemberNames,
+            consecutiveRejects: room.gameData.consecutiveRejects,
+            leaderName: playerInfo.playerName
+        });
             
             console.log(`房間 ${roomCode} 隊伍確認，開始投票：${teamMemberNames.join(', ')} (拒絕次數: ${room.gameData.consecutiveRejects})`);
         }
