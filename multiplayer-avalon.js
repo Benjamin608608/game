@@ -227,12 +227,7 @@ class MultiplayerAvalonGame {
             this.showGameScreen();
             this.showMessage('遊戲開始！角色已分配', 'success');
             
-            // 如果是房主，顯示轉盤抽選隊長
-            if (this.isHost) {
-                setTimeout(() => {
-                    this.showLeaderSelection();
-                }, 2000);
-            }
+            // 不在這裡自動顯示轉盤，等待 startLeaderSelection 事件
         });
 
         // 隊長選擇完成
@@ -349,7 +344,7 @@ class MultiplayerAvalonGame {
                     message += `，湖中女神：${data.lakeLadyHolderName}`;
                 }
                 if (data.consecutiveRejects > 0) {
-                    message += `\n⚠️ 已連續拒絕 ${data.consecutiveRejects} 次`;
+                    message += `\n⚠️ 本局已拒絕 ${data.consecutiveRejects} 次`;
                 }
                 this.showMessage(message, 'success');
             }
@@ -1250,7 +1245,7 @@ class MultiplayerAvalonGame {
             rejectInfoDiv.style.cssText = 'background: rgba(255, 152, 0, 0.2); padding: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #ff9800;';
             const remainingRejects = 4 - consecutiveRejects;
             rejectInfoDiv.innerHTML = `
-                <strong>⚠️ 注意：</strong>已連續拒絕 ${consecutiveRejects} 次<br>
+                <strong>⚠️ 注意：</strong>本局已拒絕 ${consecutiveRejects} 次<br>
                 剩餘拒絕次數：${remainingRejects} 次
                 ${remainingRejects === 0 ? '<br><span style="color: #f44336;">下次隊伍將自動通過！</span>' : ''}
             `;
@@ -1603,7 +1598,7 @@ class MultiplayerAvalonGame {
             const remainingRejects = 4 - consecutiveRejects;
             rejectWarning = `
                 <div style="background: rgba(255, 152, 0, 0.2); padding: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #ff9800;">
-                    <strong>⚠️ 警告：</strong>已連續拒絕 ${consecutiveRejects} 次，剩餘 ${remainingRejects} 次
+                    <strong>⚠️ 警告：</strong>本局已拒絕 ${consecutiveRejects} 次，剩餘 ${remainingRejects} 次
                     ${remainingRejects === 0 ? '<br><span style="color: #f44336;">下次隊伍將自動通過，無需投票！</span>' : ''}
                 </div>
             `;
@@ -1693,17 +1688,16 @@ class MultiplayerAvalonGame {
         } else if (voteDetails.type === 'mission') {
             content = `
                 <h5>任務 ${voteDetails.mission} - 任務執行</h5>
-                <div class="voters-list">
-                    <strong>成功：</strong>
-                    ${voteDetails.successVoters.map(name => 
-                        `<span class="voter-item voter-success">${name}</span>`
+                <div style="margin: 10px 0;">
+                    <strong>執行任務：</strong>
+                    ${voteDetails.teamMembers.map(name => 
+                        `<span class="voter-item" style="background: rgba(33, 150, 243, 0.3); border: 1px solid #2196F3; color: #2196F3;">${name}</span>`
                     ).join('')}
                 </div>
-                <div class="voters-list">
-                    <strong>失敗：</strong>
-                    ${voteDetails.failVoters.map(name => 
-                        `<span class="voter-item voter-fail">${name}</span>`
-                    ).join('')}
+                <div style="margin: 10px 0;">
+                    <strong>投票結果：</strong>
+                    <span class="voter-item voter-success">成功 ${voteDetails.successCount} 票</span>
+                    <span class="voter-item voter-fail">失敗 ${voteDetails.failCount} 票</span>
                 </div>
             `;
         }
@@ -1814,6 +1808,24 @@ class MultiplayerAvalonGame {
             document.body.removeChild(this.gameEndModal);
             this.gameEndModal = null;
         }
+        
+        // 清空遊戲數據
+        this.gameData = null;
+        this.playerRole = null;
+        this.selectedTeam = [];
+        this.currentVote = null;
+        this.lakeLadyTarget = null;
+        this.roleConfirmed = false;
+        
+        // 清空投票記錄
+        const voteRecords = document.getElementById('voteRecords');
+        if (voteRecords) {
+            voteRecords.innerHTML = '';
+        }
+        
+        // 隱藏所有投票界面
+        this.hideAllVotingSections();
+        
         this.showScreen('roleSelectionScreen');
         this.initializeRoleSelection();
     }
@@ -1824,6 +1836,24 @@ class MultiplayerAvalonGame {
             document.body.removeChild(this.gameEndModal);
             this.gameEndModal = null;
         }
+        
+        // 清空遊戲數據
+        this.gameData = null;
+        this.playerRole = null;
+        this.selectedTeam = [];
+        this.currentVote = null;
+        this.lakeLadyTarget = null;
+        this.roleConfirmed = false;
+        
+        // 清空投票記錄
+        const voteRecords = document.getElementById('voteRecords');
+        if (voteRecords) {
+            voteRecords.innerHTML = '';
+        }
+        
+        // 隱藏所有投票界面
+        this.hideAllVotingSections();
+        
         this.showScreen('lobbyScreen');
     }
 }

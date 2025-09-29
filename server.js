@@ -254,7 +254,7 @@ function processTeamVoteResult(room, io) {
     // 如果被拒絕，顯示剩餘拒絕次數
     if (!approved) {
         const remainingRejects = 4 - room.gameData.consecutiveRejects;
-        resultMessage += `\n剩餘拒絕次數：${remainingRejects} 次`;
+        resultMessage += `\n本局已拒絕：${room.gameData.consecutiveRejects + 1} 次，剩餘：${remainingRejects - 1} 次`;
     }
     
     io.to(room.id).emit('voteResult', {
@@ -293,8 +293,8 @@ function processTeamVoteResult(room, io) {
         room.gameData.consecutiveRejects++;
         
         if (room.gameData.consecutiveRejects >= 5) {
-            // 連續5次拒絕，邪惡陣營勝利
-            endGame(room, io, false, '⚠️ 連續5次拒絕隊伍，邪惡陣營勝利！');
+            // 5次拒絕，邪惡陣營勝利
+            endGame(room, io, false, '⚠️ 本局已拒絕5次隊伍，邪惡陣營勝利！');
             return;
         }
         
@@ -326,18 +326,24 @@ function processMissionVoteResult(room, io) {
     const missionSuccess = failCount < requiredFails;
     
     // 整理任務投票詳情
-    const successVoters = room.gameData.votes.filter(v => v.vote).map(v => v.playerName);
-    const failVoters = room.gameData.votes.filter(v => !v.vote).map(v => v.playerName);
+    const successCount = room.gameData.votes.filter(v => v.vote).length;
     
-    const resultMessage = `任務 ${room.gameData.currentMission} 結果：\n失敗票數：${failCount}\n需要失敗票數：${requiredFails}\n${missionSuccess ? '✅ 任務成功！' : '❌ 任務失敗！'}`;
+    // 獲取執行任務的隊員名單
+    const teamMemberNames = room.gameData.selectedPlayers.map(playerId => {
+        const player = room.players.get(playerId);
+        return player ? player.name : '';
+    }).filter(name => name);
+    
+    const resultMessage = `任務 ${room.gameData.currentMission} 結果：\n成功票數：${successCount}，失敗票數：${failCount}\n需要失敗票數：${requiredFails}\n${missionSuccess ? '✅ 任務成功！' : '❌ 任務失敗！'}`;
     
     io.to(room.id).emit('voteResult', {
         message: resultMessage,
         success: missionSuccess,
         voteDetails: {
             type: 'mission',
-            successVoters: successVoters,
-            failVoters: failVoters,
+            successCount: successCount,
+            failCount: failCount,
+            teamMembers: teamMemberNames,
             mission: room.gameData.currentMission
         }
     });
@@ -1031,7 +1037,7 @@ io.on('connection', (socket) => {
         if (room.gameData.consecutiveRejects >= 4) {
             // 第5次直接通過，不需要投票
             io.to(roomCode).emit('voteResult', {
-                message: `⚠️ 已達到最大拒絕次數限制！\n隊伍自動通過：${teamMemberNames.join('、')}`,
+                message: `⚠️ 本局已拒絕4次，達到最大限制！\n隊伍自動通過：${teamMemberNames.join('、')}`,
                 success: true,
                 voteDetails: {
                     type: 'team',
