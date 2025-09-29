@@ -372,6 +372,21 @@ class MultiplayerAvalonGame {
             this.allPlayers = data.allPlayers;
             this.showGameScreen();
             this.showMessage('重新連接成功！', 'success');
+
+            // 檢查是否需要恢復投票界面
+            if (data.votingStatus && data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
+                setTimeout(() => {
+                    if (data.votingStatus.votingType === 'team') {
+                        // 恢復隊伍投票界面
+                        this.showTeamVoting([], this.gameData.consecutiveRejects || 0);
+                        this.showMessage('請繼續進行隊伍投票', 'info');
+                    } else if (data.votingStatus.votingType === 'mission') {
+                        // 恢復任務投票界面
+                        this.showMissionVoting();
+                        this.showMessage('請繼續進行任務投票', 'info');
+                    }
+                }, 1000);
+            }
         });
 
         this.socket.on('roomReconnected', (data) => {

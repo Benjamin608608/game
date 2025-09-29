@@ -585,16 +585,17 @@ function endGame(room, io, goodWins, message) {
 }
 
 // 從房間移除玩家的通用函數
-function removePlayerFromRoom(room, socketId, playerInfo, io, wasKicked = false) {
+function removePlayerFromRoom(room, socketId, playerInfo, io, shouldTransferHost = false) {
     const playerName = playerInfo.playerName;
     const roomCode = playerInfo.roomCode;
+    const wasHost = room.hostId === socketId;
 
     // 移除玩家
     room.players.delete(socketId);
     players.delete(socketId);
 
-    // 如果房主離開且還有其他玩家，轉移房主權限
-    if (room.hostId === socketId && room.players.size > 0) {
+    // 根據參數決定是否轉移房主權限
+    if (wasHost && room.players.size > 0 && shouldTransferHost) {
         const newHost = room.players.values().next().value;
         newHost.isHost = true;
         room.hostId = newHost.id;
@@ -605,6 +606,8 @@ function removePlayerFromRoom(room, socketId, playerInfo, io, wasKicked = false)
         });
 
         console.log(`房主權限從 ${playerName} 轉移給 ${newHost.name}`);
+    } else if (wasHost && !shouldTransferHost) {
+        console.log(`房主 ${playerName} 暫時斷線，保留房主權限等待重連`);
     }
 
     // 通知其他玩家
@@ -699,7 +702,20 @@ io.on('connection', (socket) => {
         if (room.gameState === 'playing') {
             // 遊戲進行中，發送當前遊戲狀態
             const roleInfo = getRoleSpecificInfo(existingPlayer, Array.from(room.players.values()), room.gameData.showMordredIdentity);
-            
+
+            // 檢查玩家是否需要參與當前的投票
+            let needsVoting = false;
+            let votingType = '';
+
+            if (room.gameData.currentPhase === 'teamVote') {
+                needsVoting = true;
+                votingType = 'team';
+            } else if (room.gameData.currentPhase === 'missionVote') {
+                // 檢查玩家是否在當前任務隊伍中
+                needsVoting = room.gameData.selectedPlayers.includes(socket.id);
+                votingType = 'mission';
+            }
+
             socket.emit('gameReconnected', {
                 playerInfo: {
                     name: existingPlayer.name,
@@ -708,11 +724,20 @@ io.on('connection', (socket) => {
                     specialInfo: roleInfo
                 },
                 gameData: room.gameData,
-                allPlayers: Array.from(room.players.values()).map(p => ({
-                    id: p.id,
-                    name: p.name,
-                    isHost: p.isHost
-                }))
+                allPlayers: room.gameData.playersOrder.map(playerId => {
+                    const player = room.players.get(playerId);
+                    return player ? {
+                        id: player.id,
+                        name: player.name,
+                        isHost: player.isHost
+                    } : null;
+                }).filter(p => p !== null),
+                // 增加投票狀態信息
+                votingStatus: {
+                    needsVoting: needsVoting,
+                    votingType: votingType,
+                    hasVoted: room.gameData.votes.some(v => v.playerId === socket.id)
+                }
             });
         } else {
             // 遊戲未開始，回到大廳
@@ -1278,8 +1303,9 @@ io.on('connection', (socket) => {
         // 設置標記，表示這是主動離開
         socket.isLeavingRoom = true;
 
-        // 立即移除玩家
-        removePlayerFromRoom(room, socket.id, playerInfo, io, false);
+        // 立即移除玩家，主動離開如果是房主則轉移權限
+        const shouldTransferHost = room.hostId === socket.id;
+        removePlayerFromRoom(room, socket.id, playerInfo, io, shouldTransferHost);
     });
 
     // 房主踢人
@@ -1310,8 +1336,9 @@ io.on('connection', (socket) => {
             message: `您被房主踢出了房間`
         });
 
-        // 立即移除玩家
-        removePlayerFromRoom(room, targetPlayer.id, targetPlayerInfo, io, true);
+        // 立即移除玩家，被踢玩家如果是房主則轉移權限
+        const shouldTransferHost = room.hostId === targetPlayer.id;
+        removePlayerFromRoom(room, targetPlayer.id, targetPlayerInfo, io, shouldTransferHost);
     });
 
     // 斷線處理
@@ -1336,7 +1363,7 @@ io.on('connection', (socket) => {
                     const currentPlayerInfo = players.get(socket.id);
 
                     if (currentRoom && currentRoom.players.has(socket.id) && currentPlayerInfo) {
-                        // 玩家沒有重連，移除玩家
+                        // 玩家沒有重連，移除玩家，意外斷線不轉移房主權限
                         console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家`);
                         removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, false);
                     }
