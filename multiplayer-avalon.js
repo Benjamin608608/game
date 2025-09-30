@@ -343,24 +343,36 @@ class MultiplayerAvalonGame {
                 this.selectedTeam = [];
                 this.currentVote = null;
                 
+                const isLakeLadyPhaseForHolder =
+                    data.currentPhase === 'lakeLady' &&
+                    data.lakeLadyHolderName === this.playerName;
+
                 // 更新界面
-                this.hideAllVotingSections();
+                if (!isLakeLadyPhaseForHolder) {
+                    this.hideAllVotingSections();
+                }
+
                 this.updateGameStatus(data); // 傳遞data以便處理狀態消息
                 this.updateOtherPlayers();
                 this.updateTeamDisplay();
                 
                 // 根據階段顯示不同消息
-                if (data.statusMessage) {
+                if (data.currentPhase !== 'lakeLady') {
+                    if (data.statusMessage) {
+                        this.showMessage(data.statusMessage, 'info');
+                    } else if (data.currentPhase === 'teamSelection') {
+                        let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
+                        if (data.lakeLadyHolderName) {
+                            message += `，湖中女神：${data.lakeLadyHolderName}`;
+                        }
+                        if (data.consecutiveRejects > 0) {
+                            message += `\n⚠️ 本局已拒絕 ${data.consecutiveRejects} 次`;
+                        }
+                        this.showMessage(message, 'success');
+                    }
+                } else if (!isLakeLadyPhaseForHolder && data.statusMessage) {
+                    // 非持有者仍可收到狀態提示
                     this.showMessage(data.statusMessage, 'info');
-                } else if (data.currentPhase === 'teamSelection') {
-                    let message = `任務 ${data.currentMission} 開始！隊長：${data.leaderName}`;
-                    if (data.lakeLadyHolderName) {
-                        message += `，湖中女神：${data.lakeLadyHolderName}`;
-                    }
-                    if (data.consecutiveRejects > 0) {
-                        message += `\n⚠️ 本局已拒絕 ${data.consecutiveRejects} 次`;
-                    }
-                    this.showMessage(message, 'success');
                 }
             }
         });
