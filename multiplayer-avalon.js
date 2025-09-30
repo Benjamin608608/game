@@ -602,6 +602,7 @@ class MultiplayerAvalonGame {
         localStorage.removeItem('avalon_player_name');
         localStorage.removeItem('avalon_room_code');
         localStorage.removeItem('avalon_is_host');
+        localStorage.removeItem('avalon_save_time');
     }
 
     // 確認玩家名稱

@@ -585,16 +585,39 @@ function endGame(room, io, goodWins, message) {
 }
 
 // 從房間移除玩家的通用函數
-function removePlayerFromRoom(room, socketId, playerInfo, io, shouldTransferHost = false) {
+function removePlayerFromRoom(room, socketId, playerInfo, io, options = {}) {
+    let shouldTransferHost = false;
+    let wasKicked = false;
+    let disconnectSocket = false;
+
+    if (typeof options === 'boolean') {
+        shouldTransferHost = options;
+    } else if (typeof options === 'object' && options !== null) {
+        shouldTransferHost = options.shouldTransferHost === true;
+        wasKicked = options.wasKicked === true;
+        disconnectSocket = options.disconnectSocket === true;
+    }
+
+    if (!playerInfo) return;
+
     const playerName = playerInfo.playerName;
     const roomCode = playerInfo.roomCode;
     const wasHost = room.hostId === socketId;
 
-    // 移除玩家
+    // 從房間與全域玩家列表移除
     room.players.delete(socketId);
     players.delete(socketId);
 
-    // 根據參數決定是否轉移房主權限
+    const targetSocket = io.sockets.sockets.get(socketId);
+    if (targetSocket) {
+        targetSocket.isLeavingRoom = true;
+        targetSocket.leave(roomCode);
+        if (disconnectSocket) {
+            targetSocket.disconnect(true);
+        }
+    }
+
+    // 轉移房主權限
     if (wasHost && room.players.size > 0 && shouldTransferHost) {
         const newHost = room.players.values().next().value;
         newHost.isHost = true;
@@ -611,11 +634,19 @@ function removePlayerFromRoom(room, socketId, playerInfo, io, shouldTransferHost
     }
 
     // 通知其他玩家
+    const playersSnapshot = Array.from(room.players.values()).map(p => ({
+        id: p.id,
+        name: p.name,
+        isHost: p.isHost,
+        role: p.role,
+        isEvil: p.isEvil
+    }));
+
     io.to(roomCode).emit('playerLeft', {
         playerId: socketId,
         playerName: playerName,
-        wasKicked: wasKicked,
-        players: Array.from(room.players.values())
+        wasKicked,
+        players: playersSnapshot
     });
 
     // 如果房間空了，刪除房間
@@ -1346,7 +1377,11 @@ io.on('connection', (socket) => {
 
         // 立即移除玩家，主動離開如果是房主則轉移權限
         const shouldTransferHost = room.hostId === socket.id;
-        removePlayerFromRoom(room, socket.id, playerInfo, io, shouldTransferHost);
+        removePlayerFromRoom(room, socket.id, playerInfo, io, {
+            shouldTransferHost,
+            wasKicked: false,
+            disconnectSocket: false
+        });
     });
 
     // 房主踢人
@@ -1379,7 +1414,11 @@ io.on('connection', (socket) => {
 
         // 立即移除玩家，被踢玩家如果是房主則轉移權限
         const shouldTransferHost = room.hostId === targetPlayer.id;
-        removePlayerFromRoom(room, targetPlayer.id, targetPlayerInfo, io, shouldTransferHost);
+        removePlayerFromRoom(room, targetPlayer.id, targetPlayerInfo, io, {
+            shouldTransferHost,
+            wasKicked: true,
+            disconnectSocket: true
+        });
     });
 
     // 斷線處理
@@ -1406,7 +1445,11 @@ io.on('connection', (socket) => {
                     if (currentRoom && currentRoom.players.has(socket.id) && currentPlayerInfo) {
                         // 玩家沒有重連，移除玩家，意外斷線不轉移房主權限
                         console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家`);
-                        removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, false);
+                        removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, {
+                            shouldTransferHost: false,
+                            wasKicked: false,
+                            disconnectSocket: false
+                        });
                     }
                 }, 30000); // 30秒重連時間
             } else {
