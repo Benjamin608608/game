@@ -939,8 +939,15 @@ io.on('connection', (socket) => {
 
         // 直接進入隊長選擇階段
         setTimeout(() => {
+            const playersLite = Array.from(room.players.values()).map(p => ({
+                id: p.id,
+                name: p.name,
+                isHost: p.isHost
+            }));
+
             io.to(roomCode).emit('startLeaderSelection', {
-                manualSelection: room.gameData.manualLeaderSelection
+                manualSelection: room.gameData.manualLeaderSelection,
+                players: playersLite
             });
         }, 1000);
         
@@ -1019,14 +1026,18 @@ io.on('connection', (socket) => {
 
         // 發送結果給湖中女神持有者
         io.to(socket.id).emit('lakeLadyResult', {
+            holderId: socket.id,
             holderName: playerInfo.playerName,
+            targetId: targetPlayer.id,
             targetName: targetName,
             isEvil: targetPlayer.isEvil
         });
-
+        
         // 通知其他玩家（包括湖中女神持有者）
         io.to(roomCode).emit('lakeLadyPublicResult', {
+            holderId: socket.id,
             holderName: playerInfo.playerName,
+            targetId: targetPlayer.id,
             targetName: targetName
         });
 

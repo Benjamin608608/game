@@ -17,6 +17,8 @@ class MultiplayerAvalonGame {
         this.roleConfirmed = false;
         this.isReordering = false;
         this.draggedPlayer = null;
+        this.lakeLadyAutoConfirmTimer = null;
+        this.restartInProgress = false;
 
         this.initializeEventListeners();
         this.initializeSocketListeners();
@@ -252,11 +254,15 @@ class MultiplayerAvalonGame {
 
         // 角色確認完成，進入轉盤階段
         this.socket.on('startLeaderSelection', (data) => {
+            if (data && Array.isArray(data.players) && data.players.length) {
+                this.allPlayers = data.players;
+            }
+
             if (this.isHost) {
                 if (data && data.manualSelection) {
-                    this.showManualLeaderSelection();
+                    this.showManualLeaderSelection(data && data.players);
                 } else {
-                    this.showLeaderSelection();
+                    this.showLeaderSelection(data && data.players);
                 }
             } else {
                 const message = data && data.manualSelection ? 
@@ -352,6 +358,11 @@ class MultiplayerAvalonGame {
                     this.hideAllVotingSections();
                 }
 
+                if (data.currentPhase !== 'lakeLady' && this.lakeLadyAutoConfirmTimer) {
+                    clearTimeout(this.lakeLadyAutoConfirmTimer);
+                    this.lakeLadyAutoConfirmTimer = null;
+                }
+
                 this.updateGameStatus(data); // 傳遞data以便處理狀態消息
                 this.updateOtherPlayers();
                 this.updateTeamDisplay();
@@ -423,7 +434,8 @@ class MultiplayerAvalonGame {
         });
 
         this.socket.on('lakeLadyResult', (data) => {
-            if (data.holderName === this.playerName) {
+            const isHolder = (data.holderId && this.socket.id === data.holderId) || data.holderName === this.playerName;
+            if (isHolder) {
                 this.showLakeLadyResult(data.targetName, data.isEvil);
             }
         });
@@ -449,6 +461,23 @@ class MultiplayerAvalonGame {
 
         // 房主重新開始遊戲事件
         this.socket.on('gameRestarted', (data) => {
+            this.restartInProgress = false;
+
+            if (this.lakeLadyAutoConfirmTimer) {
+                clearTimeout(this.lakeLadyAutoConfirmTimer);
+                this.lakeLadyAutoConfirmTimer = null;
+            }
+
+            const hostRestartBtn = document.getElementById('hostRestartBtn');
+            if (hostRestartBtn) {
+                hostRestartBtn.disabled = false;
+                if (data.isHost) {
+                    hostRestartBtn.classList.remove('hidden');
+                } else {
+                    hostRestartBtn.classList.add('hidden');
+                }
+            }
+
             // 清空遊戲數據
             this.gameData = null;
             this.playerRole = null;
@@ -964,8 +993,10 @@ class MultiplayerAvalonGame {
         const hostRestartBtn = document.getElementById('hostRestartBtn');
         if (this.isHost) {
             hostRestartBtn.classList.remove('hidden');
+            hostRestartBtn.disabled = false;
         } else {
             hostRestartBtn.classList.add('hidden');
+            hostRestartBtn.disabled = false;
         }
     }
 
@@ -1318,11 +1349,21 @@ class MultiplayerAvalonGame {
     }
 
     // 確認湖中女神結果
-    confirmLakeLady() {
+    confirmLakeLady(autoTriggered = false) {
+        clearTimeout(this.lakeLadyAutoConfirmTimer);
+        this.lakeLadyAutoConfirmTimer = null;
+
+        const confirmBtn = document.getElementById('lakeLadyConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+        }
+
         document.getElementById('lakeLadyResultSection').style.display = 'none';
         this.socket.emit('lakeLadyConfirm', {
-            roomCode: this.roomCode
+            roomCode: this.roomCode,
+            auto: autoTriggered
         });
+        this.lakeLadyTarget = null;
     }
 
     // 請求湖中女神可選目標（用於重連恢復）
@@ -1389,6 +1430,8 @@ class MultiplayerAvalonGame {
     // 顯示湖中女神界面
     showLakeLady(availableTargets) {
         this.hideAllVotingSections();
+        clearTimeout(this.lakeLadyAutoConfirmTimer);
+        this.lakeLadyAutoConfirmTimer = null;
         
         const playersDiv = document.getElementById('lakeLadyPlayers');
         playersDiv.innerHTML = '';
@@ -1403,61 +1446,110 @@ class MultiplayerAvalonGame {
             playersDiv.appendChild(playerDiv);
         });
         
+        const status = document.getElementById('lakeLadyStatus');
+        if (status) {
+            status.textContent = '選擇一名玩家查看身份';
+        }
+
         document.getElementById('lakeLadySection').style.display = 'block';
     }
 
     // 顯示湖中女神結果
     showLakeLadyResult(targetName, isEvil) {
         this.hideAllVotingSections();
-        
+
+        const status = document.getElementById('lakeLadyStatus');
+        if (status) {
+            status.textContent = `你查驗了 ${targetName}，結果：${isEvil ? '邪惡陣營' : '好人陣營'}。 點擊下方按鈕或等待自動繼續。`;
+        }
+
         const resultDiv = document.getElementById('lakeLadyResult');
         resultDiv.className = `lake-lady-result ${isEvil ? 'evil' : 'good'}`;
         resultDiv.innerHTML = `
             <div><strong>${targetName}</strong></div>
             <div>${isEvil ? '👹 邪惡陣營' : '😇 好人陣營'}</div>
         `;
-        
-        document.getElementById('lakeLadyResultSection').style.display = 'block';
+
+        const resultSection = document.getElementById('lakeLadyResultSection');
+        resultSection.style.display = 'block';
+
+        const confirmBtn = document.getElementById('lakeLadyConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '確認並繼續';
+        }
+
+        clearTimeout(this.lakeLadyAutoConfirmTimer);
+        this.lakeLadyAutoConfirmTimer = setTimeout(() => {
+            if (document.getElementById('lakeLadyResultSection').style.display !== 'none') {
+                this.confirmLakeLady(true);
+            }
+        }, 5000);
     }
 
     // 顯示手動選擇隊長界面
-    showManualLeaderSelection() {
+    showManualLeaderSelection(players = this.allPlayers) {
         this.hideAllVotingSections();
-        
+
+        const playerList = Array.isArray(players) && players.length ? players : this.allPlayers;
+        this.allPlayers = playerList;
         const leaderSelectionSection = document.getElementById('leaderSelectionSection');
-        leaderSelectionSection.innerHTML = `
-            <h3>👤 選擇第一個隊長</h3>
-            <p>請選擇一名玩家作為第一個隊長</p>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;">
-                ${this.allPlayers.map(player => `
-                    <button class="btn" onclick="window.game.selectManualLeader('${player.id}')" 
-                            style="padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);">
-                        ${player.name}
-                        ${player.isHost ? ' 🏠' : ''}
-                    </button>
-                `).join('')}
-            </div>
-        `;
-        
+        leaderSelectionSection.innerHTML = '';
+
+        const title = document.createElement('h3');
+        title.textContent = '👤 選擇第一個隊長';
+        const description = document.createElement('p');
+        description.textContent = '請選擇一名玩家作為第一個隊長';
+
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;';
+
+        playerList.forEach(player => {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.dataset.playerId = player.id;
+            btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);';
+            btn.textContent = `${player.name}${player.isHost ? ' 🏠' : ''}`;
+            btn.addEventListener('click', () => this.selectManualLeader(player.id, player.name));
+            grid.appendChild(btn);
+        });
+
+        leaderSelectionSection.appendChild(title);
+        leaderSelectionSection.appendChild(description);
+        leaderSelectionSection.appendChild(grid);
         leaderSelectionSection.style.display = 'block';
     }
 
     // 手動選擇隊長
-    selectManualLeader(playerId) {
-        // 直接選擇，不需要確認
+    selectManualLeader(playerId, playerName = '') {
+        if (!this.isHost) return;
+
+        this.hideAllVotingSections();
         this.socket.emit('confirmLeader', {
             roomCode: this.roomCode,
             leaderId: playerId
         });
+
+        if (playerName) {
+            this.showMessage(`已選擇 ${playerName} 作為第一個隊長`, 'success');
+        }
     }
 
     // 顯示轉盤抽選隊長
-    showLeaderSelection() {
+    showLeaderSelection(players = this.allPlayers) {
         this.hideAllVotingSections();
-        
+
+        const playerList = Array.isArray(players) && players.length ? players : this.allPlayers;
+        if (!playerList || !playerList.length) {
+            this.showMessage('目前沒有可供抽選的玩家', 'error');
+            return;
+        }
+
+        this.allPlayers = playerList;
+
         // 創建簡化的轉盤顯示
         const spinnerWheel = document.getElementById('spinnerWheel');
-        const playerCount = this.allPlayers.length;
+        const playerCount = playerList.length;
         const anglePerPlayer = 360 / playerCount;
         
         // 清空並重新創建轉盤
@@ -1469,14 +1561,14 @@ class MultiplayerAvalonGame {
                 <div id="currentPlayerDisplay">準備轉盤...</div>
             </div>
             <div class="spinner-players-list">
-                ${this.allPlayers.map((player, index) => 
+                ${playerList.map((player, index) => 
                     `<div class="spinner-player-item" data-index="${index}">${player.name}</div>`
                 ).join('')}
             </div>
         `;
         
         // 保存玩家數據以供計算使用
-        this.spinnerPlayers = this.allPlayers;
+        this.spinnerPlayers = playerList;
         
         document.getElementById('leaderSelectionSection').style.display = 'block';
     }
@@ -1890,12 +1982,12 @@ class MultiplayerAvalonGame {
                 
                 <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
                     ${this.isHost ? `
-                        <button onclick="window.game.restartGame()" 
+                        <button type="button" data-action="restart-game"
                                 style="background: #4CAF50; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
                             🔄 再來一局
                         </button>
                     ` : ''}
-                    <button onclick="window.game.backToLobby()" 
+                    <button type="button" data-action="back-lobby"
                             style="background: #2196F3; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1.1em;">
                         🏠 返回大廳
                     </button>
@@ -1905,48 +1997,91 @@ class MultiplayerAvalonGame {
         
         document.body.appendChild(modal);
         this.gameEndModal = modal;
+
+        if (this.isHost) {
+            const restartBtn = modal.querySelector('[data-action="restart-game"]');
+            if (restartBtn) {
+                restartBtn.addEventListener('click', () => this.restartGame());
+            }
+        }
+
+        const backBtn = modal.querySelector('[data-action="back-lobby"]');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => this.backToLobby());
+        }
     }
 
     // 重新開始遊戲
     restartGame() {
+        if (!this.isHost) {
+            this.showMessage('只有房主可以重新開始遊戲', 'error');
+            return;
+        }
+
         if (this.gameEndModal) {
-            document.body.removeChild(this.gameEndModal);
-            this.gameEndModal = null;
+            const restartBtn = this.gameEndModal.querySelector('[data-action="restart-game"]');
+            if (restartBtn) {
+                restartBtn.disabled = true;
+                restartBtn.textContent = '重新開始中...';
+            }
         }
-        
-        // 清空遊戲數據
-        this.gameData = null;
-        this.playerRole = null;
-        this.selectedTeam = [];
-        this.currentVote = null;
-        this.lakeLadyTarget = null;
-        this.roleConfirmed = false;
-        
-        // 清空投票記錄
-        const voteRecords = document.getElementById('voteRecords');
-        if (voteRecords) {
-            voteRecords.innerHTML = '';
-        }
-        
-        // 隱藏所有投票界面
-        this.hideAllVotingSections();
-        
-        this.showScreen('roleSelectionScreen');
-        this.initializeRoleSelection();
+
+        this.requestHostRestart({ prompt: false });
     }
 
     // 房主重新開始遊戲
     hostRestartGame() {
-        if (confirm('確定要重新開始遊戲嗎？這將結束當前遊戲並回到角色選擇畫面。')) {
-            // 通知伺服器重新開始遊戲
-            this.socket.emit('hostRestartGame', {
-                roomCode: this.roomCode
-            });
+        this.requestHostRestart({ prompt: true });
+    }
+
+    requestHostRestart({ prompt = false } = {}) {
+        if (!this.isHost) {
+            this.showMessage('只有房主可以重新開始遊戲', 'error');
+            return;
         }
+
+        if (this.restartInProgress) {
+            this.showMessage('重新開始請求已送出，請稍候...', 'info');
+            return;
+        }
+
+        if (prompt && !window.confirm('確定要重新開始遊戲嗎？這將結束當前遊戲並回到角色選擇畫面。')) {
+            return;
+        }
+
+        this.restartInProgress = true;
+
+        const hostRestartBtn = document.getElementById('hostRestartBtn');
+        if (hostRestartBtn) {
+            hostRestartBtn.disabled = true;
+        }
+
+        this.socket.emit('hostRestartGame', {
+            roomCode: this.roomCode
+        });
+
+        this.showMessage('已通知所有玩家重新開始遊戲', 'info');
     }
 
     // 返回大廳
     backToLobby() {
+        this.restartInProgress = false;
+
+        if (this.lakeLadyAutoConfirmTimer) {
+            clearTimeout(this.lakeLadyAutoConfirmTimer);
+            this.lakeLadyAutoConfirmTimer = null;
+        }
+
+        const hostRestartBtn = document.getElementById('hostRestartBtn');
+        if (hostRestartBtn) {
+            hostRestartBtn.disabled = false;
+            if (this.isHost) {
+                hostRestartBtn.classList.remove('hidden');
+            } else {
+                hostRestartBtn.classList.add('hidden');
+            }
+        }
+
         if (this.gameEndModal) {
             document.body.removeChild(this.gameEndModal);
             this.gameEndModal = null;

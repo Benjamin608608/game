@@ -155,7 +155,7 @@ class GameController {
         // 角色確認後等待系統進入隊長抽選
     }
 
-    onStartLeaderSelection() {
+    onStartLeaderSelection(payload = {}) {
         const host = this.players.get(this.names[0]);
         const randomIndex = Math.floor(Math.random() * this.playersOrder.length);
         const chosenId = this.playersOrder[randomIndex];
@@ -376,9 +376,9 @@ class PlayerSim {
             this.socket.emit('roleConfirmed', { roomCode: this.roomCode });
         });
 
-        this.socket.on('startLeaderSelection', () => {
+        this.socket.on('startLeaderSelection', (data) => {
             if (this.isHost) {
-                this.controller.onStartLeaderSelection();
+                this.controller.onStartLeaderSelection(data);
             }
         });
 
