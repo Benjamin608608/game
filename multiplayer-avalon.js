@@ -344,6 +344,9 @@ class MultiplayerAvalonGame {
                 if (data.lakeLadyHolder) {
                     this.gameData.lakeLadyHolder = data.lakeLadyHolder;
                 }
+                if (typeof data.lakeLadyHolderName === 'string') {
+                    this.gameData.lakeLadyHolderName = data.lakeLadyHolderName;
+                }
                 
                 // 清空選擇狀態
                 this.selectedTeam = [];
@@ -1437,15 +1440,17 @@ class MultiplayerAvalonGame {
         this.hideAllVotingSections();
         clearTimeout(this.lakeLadyAutoConfirmTimer);
         this.lakeLadyAutoConfirmTimer = null;
-        
+
         const playersDiv = document.getElementById('lakeLadyPlayers');
         playersDiv.innerHTML = '';
-        
+
         if (!Array.isArray(availableTargets) || availableTargets.length === 0) {
-            this.handleLakeLadyUnavailable({});
+            this.handleLakeLadyUnavailable({
+                holderName: this.gameData?.lakeLadyHolderName || this.playerName
+            });
             return;
         }
-        
+
         availableTargets.forEach(playerName => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'lake-lady-player';
@@ -1455,10 +1460,10 @@ class MultiplayerAvalonGame {
             });
             playersDiv.appendChild(playerDiv);
         });
-        
+
         const status = document.getElementById('lakeLadyStatus');
         if (status) {
-            status.textContent = '選擇一名玩家查看身份';
+            status.textContent = 'Select a player to inspect.';
         }
 
         document.getElementById('lakeLadySection').style.display = 'block';
@@ -1468,17 +1473,17 @@ class MultiplayerAvalonGame {
     showLakeLadyResult(targetName, isEvil) {
         this.hideAllVotingSections();
 
+        const alignmentText = isEvil ? 'Evil' : 'Good';
+
         const status = document.getElementById('lakeLadyStatus');
         if (status) {
-            status.textContent = `你查驗了 ${targetName}，結果：${isEvil ? '邪惡陣營' : '好人陣營'}。 點擊下方按鈕或等待自動繼續。`;
+            status.textContent = 'You inspected ' + targetName + '. Result: ' + alignmentText + '. Confirm below.';
         }
 
         const resultDiv = document.getElementById('lakeLadyResult');
-        resultDiv.className = `lake-lady-result ${isEvil ? 'evil' : 'good'}`;
-        resultDiv.innerHTML = `
-            <div><strong>${targetName}</strong></div>
-            <div>${isEvil ? '👹 邪惡陣營' : '😇 好人陣營'}</div>
-        `;
+        resultDiv.className = 'lake-lady-result ' + (isEvil ? 'evil' : 'good');
+        resultDiv.innerHTML = '<div><strong>' + targetName + '</strong></div>' +
+            '<div>Alignment: ' + alignmentText + '</div>';
 
         const resultSection = document.getElementById('lakeLadyResultSection');
         resultSection.style.display = 'block';
@@ -1486,8 +1491,10 @@ class MultiplayerAvalonGame {
         const confirmBtn = document.getElementById('lakeLadyConfirmBtn');
         if (confirmBtn) {
             confirmBtn.disabled = false;
-            confirmBtn.textContent = '確認並繼續';
+            confirmBtn.textContent = 'Confirm and continue';
         }
+
+        this.showMessage('You inspected ' + targetName + '. Result: ' + alignmentText + '.', isEvil ? 'error' : 'success');
 
         clearTimeout(this.lakeLadyAutoConfirmTimer);
         this.lakeLadyAutoConfirmTimer = setTimeout(() => {
@@ -1504,7 +1511,7 @@ class MultiplayerAvalonGame {
 
         const status = document.getElementById('lakeLadyStatus');
         if (status) {
-            status.textContent = '湖中女神沒有可查驗對象，本輪自動跳過。';
+            status.textContent = 'No available targets for Lake Lady this round. Skipping automatically.';
         }
 
         const playersDiv = document.getElementById('lakeLadyPlayers');
@@ -1536,7 +1543,7 @@ class MultiplayerAvalonGame {
         this.lakeLadyTarget = null;
 
         const holderSuffix = data.holderName ? ' ' + data.holderName : '';
-        this.showMessage('湖中女神持有者' + holderSuffix + '本輪沒有可查驗對象，已自動跳過。', 'info');
+        this.showMessage('Lake Lady holder' + holderSuffix + ' has no available targets this round and the phase is skipped automatically.', 'info');
     }
 
 
@@ -1544,26 +1551,56 @@ class MultiplayerAvalonGame {
     showManualLeaderSelection(players = this.allPlayers) {
         this.hideAllVotingSections();
 
-        const playerList = Array.isArray(players) && players.length ? players : this.allPlayers;
-        this.allPlayers = playerList;
+        const existingPlayers = Array.isArray(this.allPlayers) ? this.allPlayers : [];
+        const sourcePlayers = Array.isArray(players) && players.length ? players : existingPlayers;
+
+        const normalizedPlayers = sourcePlayers.map((player, index) => {
+            const candidateId = typeof player === 'object' && player ? (player.id || player.socketId) : undefined;
+            const candidateName = typeof player === 'string'
+                ? player
+                : (player && (player.name || player.playerName)) || undefined;
+
+            const fallback =
+                existingPlayers.find(p =>
+                    (candidateId && p.id === candidateId) ||
+                    (candidateName && (p.name === candidateName || p.playerName === candidateName))
+                ) || existingPlayers[index] || {};
+
+            const hasExplicitIsHost = typeof player === 'object' && player && Object.prototype.hasOwnProperty.call(player, 'isHost');
+            const resolvedName = candidateName || fallback.name || fallback.playerName || ('Player ' + (index + 1));
+            const resolvedId = candidateId || fallback.id || ('player-' + index);
+            const resolvedIsHost = hasExplicitIsHost ? !!player.isHost : !!fallback.isHost;
+
+            return {
+                ...fallback,
+                ...(typeof player === 'object' && player ? player : {}),
+                id: resolvedId,
+                name: resolvedName,
+                isHost: resolvedIsHost
+            };
+        });
+
+        this.allPlayers = normalizedPlayers;
+
         const leaderSelectionSection = document.getElementById('leaderSelectionSection');
         leaderSelectionSection.innerHTML = '';
 
         const title = document.createElement('h3');
-        title.textContent = '👤 選擇第一個隊長';
+        title.textContent = 'Select First Leader';
         const description = document.createElement('p');
-        description.textContent = '請選擇一名玩家作為第一個隊長';
+        description.textContent = 'Choose a player to start as the first leader.';
 
         const grid = document.createElement('div');
         grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;';
 
-        playerList.forEach(player => {
+        normalizedPlayers.forEach(player => {
+            const displayName = player.name || player.playerName || 'Unknown player';
             const btn = document.createElement('button');
             btn.className = 'btn';
             btn.dataset.playerId = player.id;
             btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);';
-            btn.textContent = `${player.name}${player.isHost ? ' 🏠' : ''}`;
-            btn.addEventListener('click', () => this.selectManualLeader(player.id, player.name));
+            btn.textContent = displayName + (player.isHost ? ' (host)' : '');
+            btn.addEventListener('click', () => this.selectManualLeader(player.id, displayName));
             grid.appendChild(btn);
         });
 
