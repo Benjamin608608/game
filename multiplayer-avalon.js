@@ -1713,7 +1713,19 @@ class MultiplayerAvalonGame {
         
         // 保存玩家數據以供計算使用
         this.spinnerPlayers = playerList;
-        
+
+        // 確保轉盤按鈕和結果區域正確顯示
+        const spinBtn = document.getElementById('spinBtn');
+        const spinResult = document.getElementById('spinResult');
+        if (spinBtn) {
+            spinBtn.style.display = 'block';
+            spinBtn.disabled = false;
+            spinBtn.textContent = '開始轉盤';
+        }
+        if (spinResult) {
+            spinResult.style.display = 'none';
+        }
+
         document.getElementById('leaderSelectionSection').style.display = 'block';
     }
 
