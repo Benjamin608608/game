@@ -1512,10 +1512,12 @@ io.on('connection', (socket) => {
                     const currentPlayerInfo = players.get(socket.id);
 
                     if (currentRoom && currentRoom.players.has(socket.id) && currentPlayerInfo) {
-                        // 玩家沒有重連，移除玩家，意外斷線不轉移房主權限
-                        console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家`);
+                        // 玩家沒有重連，移除玩家
+                        // 如果是房主且超時未重連，則轉移房主權限
+                        const isHost = currentRoom.hostId === socket.id;
+                        console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家${isHost ? '（轉移房主權限）' : ''}`);
                         removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, {
-                            shouldTransferHost: false,
+                            shouldTransferHost: isHost,
                             wasKicked: false,
                             disconnectSocket: false
                         });

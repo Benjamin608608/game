@@ -396,6 +396,11 @@ class MultiplayerAvalonGame {
             this.playerRole = data.playerInfo;
             this.gameData = data.gameData;
             this.allPlayers = data.allPlayers;
+            // 恢復房主狀態
+            const myPlayer = this.allPlayers.find(p => p.name === this.playerName);
+            if (myPlayer) {
+                this.isHost = myPlayer.isHost;
+            }
             this.showGameScreen();
             this.showMessage('重新連接成功！', 'success');
 
