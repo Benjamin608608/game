@@ -1504,9 +1504,9 @@ io.on('connection', (socket) => {
                 }
 
                 // 意外斷線，給予重連機會
-                console.log(`玩家 ${playerInfo.playerName} 意外斷線，保留30秒重連時間`);
+                console.log(`玩家 ${playerInfo.playerName} 意外斷線，保留30分鐘重連時間`);
 
-                // 30秒後如果沒有重連，轉移房主權限但保留玩家資料以便稍後重連
+                // 30分鐘後如果沒有重連，轉移房主權限但保留玩家資料以便稍後重連
                 setTimeout(() => {
                     const currentRoom = rooms.get(playerInfo.roomCode);
                     const existingPlayer = currentRoom ? Array.from(currentRoom.players.values()).find(p => p.name === playerInfo.playerName) : null;
@@ -1537,7 +1537,7 @@ io.on('connection', (socket) => {
 
                         console.log(`玩家 ${playerInfo.playerName} 重連超時，但保留玩家資料等待重連`);
                     }
-                }, 30000); // 30秒重連時間
+                }, 1800000); // 30分鐘重連時間
             } else {
                 // 房間不存在，直接清理玩家信息
                 players.delete(socket.id);

@@ -624,11 +624,11 @@ class MultiplayerAvalonGame {
         const saveTime = localStorage.getItem('avalon_save_time');
 
         if (savedPlayerName && savedRoomCode && this.currentScreen === 'nameScreen') {
-            // 檢查保存時間，如果超過5分鐘就不重連（可能遊戲已結束）
+            // 檢查保存時間，如果超過30分鐘就不重連（可能遊戲已結束）
             const now = Date.now();
             const timeDiff = saveTime ? (now - parseInt(saveTime)) : 0;
 
-            if (timeDiff < 5 * 60 * 1000) { // 5分鐘內
+            if (timeDiff < 30 * 60 * 1000) { // 30分鐘內
                 this.playerName = savedPlayerName;
                 this.roomCode = savedRoomCode;
 
