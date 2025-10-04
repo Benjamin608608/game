@@ -823,7 +823,9 @@ io.on('connection', (socket) => {
                     votingType = 'teamSelection';
                 }
             } else if (room.gameData.currentPhase === 'teamVote') {
-                needsVoting = true;
+                // 檢查玩家是否已經投過票
+                const hasVoted = room.gameData.votes.some(v => v.playerId === socket.id);
+                needsVoting = !hasVoted;
                 votingType = 'team';
                 // 提供隊伍投票所需的資料
                 const currentLeader = room.players.get(room.gameData.currentLeader);
@@ -836,8 +838,10 @@ io.on('connection', (socket) => {
                     consecutiveRejects: room.gameData.consecutiveRejects || 0
                 };
             } else if (room.gameData.currentPhase === 'missionVote') {
-                // 檢查玩家是否在當前任務隊伍中
-                needsVoting = room.gameData.selectedPlayers.includes(socket.id);
+                // 檢查玩家是否在當前任務隊伍中且未投票
+                const isInTeam = room.gameData.selectedPlayers.includes(socket.id);
+                const hasVoted = room.gameData.votes.some(v => v.playerId === socket.id);
+                needsVoting = isInTeam && !hasVoted;
                 votingType = 'mission';
                 // 提供任務投票所需的資料
                 votingData = {
