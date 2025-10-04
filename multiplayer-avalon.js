@@ -1554,10 +1554,6 @@ class MultiplayerAvalonGame {
         const existingPlayers = Array.isArray(this.allPlayers) ? this.allPlayers : [];
         const sourcePlayers = Array.isArray(players) && players.length ? players : existingPlayers;
 
-        console.log('showManualLeaderSelection - players:', players);
-        console.log('showManualLeaderSelection - this.allPlayers:', this.allPlayers);
-        console.log('showManualLeaderSelection - sourcePlayers:', sourcePlayers);
-
         const normalizedPlayers = sourcePlayers.map((player, index) => {
             const candidateId = typeof player === 'object' && player ? (player.id || player.socketId) : undefined;
             const candidateName = typeof player === 'string'
@@ -1597,15 +1593,12 @@ class MultiplayerAvalonGame {
         const grid = document.createElement('div');
         grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;';
 
-        console.log('showManualLeaderSelection - normalizedPlayers:', normalizedPlayers);
-
         normalizedPlayers.forEach(player => {
             const displayName = player.name || player.playerName || 'Unknown player';
-            console.log('Creating button for player:', player, 'displayName:', displayName);
             const btn = document.createElement('button');
             btn.className = 'btn';
             btn.dataset.playerId = player.id;
-            btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);';
+            btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: white;';
             btn.textContent = displayName + (player.isHost ? ' (房主)' : '');
             btn.addEventListener('click', () => this.selectManualLeader(player.id, displayName));
             grid.appendChild(btn);
