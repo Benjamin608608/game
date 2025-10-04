@@ -1626,7 +1626,7 @@ class MultiplayerAvalonGame {
                 ) || existingPlayers[index] || {};
 
             const hasExplicitIsHost = typeof player === 'object' && player && Object.prototype.hasOwnProperty.call(player, 'isHost');
-            const resolvedName = candidateName || fallback.name || fallback.playerName || ('Player ' + (index + 1));
+            const resolvedName = candidateName || fallback.name || fallback.playerName || ('玩家 ' + (index + 1));
             const resolvedId = candidateId || fallback.id || ('player-' + index);
             const resolvedIsHost = hasExplicitIsHost ? !!player.isHost : !!fallback.isHost;
 
@@ -1653,7 +1653,7 @@ class MultiplayerAvalonGame {
         grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;';
 
         normalizedPlayers.forEach(player => {
-            const displayName = player.name || player.playerName || 'Unknown player';
+            const displayName = player.name || player.playerName || '未知玩家';
             const btn = document.createElement('button');
             btn.className = 'btn';
             btn.dataset.playerId = player.id;
@@ -1711,7 +1711,7 @@ class MultiplayerAvalonGame {
             </div>
             <div class="spinner-players-list">
                 ${playerList.map((player, index) =>
-                    `<div class="spinner-player-item" data-index="${index}">${player.name || player.playerName || 'Player ' + (index + 1)}</div>`
+                    `<div class="spinner-player-item" data-index="${index}">${player.name || player.playerName || '玩家 ' + (index + 1)}</div>`
                 ).join('')}
             </div>
         `;
