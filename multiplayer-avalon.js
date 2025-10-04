@@ -399,26 +399,60 @@ class MultiplayerAvalonGame {
             this.showGameScreen();
             this.showMessage('重新連接成功！', 'success');
 
-            // 檢查是否需要恢復投票界面
-            if (data.votingStatus && data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
+            // 檢查是否需要恢復遊戲界面
+            if (data.votingStatus && data.votingStatus.votingData) {
                 setTimeout(() => {
                     const vData = data.votingStatus.votingData || {};
-                    if (data.votingStatus.votingType === 'team') {
+
+                    if (data.votingStatus.votingType === 'teamSelection') {
+                        // 恢復隊長選擇隊員界面
+                        if (vData.isLeader) {
+                            this.showMessage(`你是隊長！請選擇 ${vData.requiredTeamSize} 名隊員`, 'info');
+                            // 觸發 gameAction 來顯示選擇界面
+                            this.handleGameAction({
+                                action: 'selectTeam',
+                                requiredSize: vData.requiredTeamSize,
+                                currentMission: vData.currentMission
+                            });
+                        } else {
+                            this.showMessage(`${vData.leaderName} 正在選擇隊員...`, 'info');
+                        }
+                    } else if (data.votingStatus.votingType === 'team') {
                         // 恢復隊伍投票界面
-                        this.showTeamVoting(
-                            vData.teamMembers || [],
-                            vData.consecutiveRejects || 0,
-                            vData.leaderName || ''
-                        );
-                        this.showMessage('請繼續進行隊伍投票', 'info');
+                        if (!data.votingStatus.hasVoted) {
+                            this.showTeamVoting(
+                                vData.teamMembers || [],
+                                vData.consecutiveRejects || 0,
+                                vData.leaderName || ''
+                            );
+                            this.showMessage('請繼續進行隊伍投票', 'info');
+                        } else {
+                            this.showMessage('等待其他玩家投票...', 'info');
+                        }
                     } else if (data.votingStatus.votingType === 'mission') {
                         // 恢復任務投票界面
-                        this.showMissionVoting(vData.teamSize || this.gameData.selectedPlayers.length);
-                        this.showMessage('請繼續進行任務投票', 'info');
+                        if (data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
+                            this.showMissionVoting(vData.teamSize || this.gameData.selectedPlayers.length);
+                            this.showMessage('請繼續進行任務投票', 'info');
+                        } else {
+                            this.showMessage('等待隊員投票...', 'info');
+                        }
                     } else if (data.votingStatus.votingType === 'lakeLady') {
-                        // 恢復湖中女神界面，需要獲取可選目標
-                        this.requestLakeLadyTargets();
-                        this.showMessage('請繼續使用湖中女神查驗', 'info');
+                        // 恢復湖中女神界面
+                        if (data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
+                            this.requestLakeLadyTargets();
+                            this.showMessage('請繼續使用湖中女神查驗', 'info');
+                        } else {
+                            this.showMessage('等待湖中女神查驗...', 'info');
+                        }
+                    } else if (data.votingStatus.votingType === 'assassination') {
+                        // 恢復刺殺界面
+                        if (vData.isAssassin) {
+                            this.showAssassinationInterface(vData.targets || [], true);
+                            this.showMessage('請選擇要刺殺的目標', 'info');
+                        } else {
+                            this.showMessage('等待刺客選擇刺殺目標...', 'info');
+                        }
                     }
                 }, 1000);
             }

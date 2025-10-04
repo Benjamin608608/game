@@ -761,7 +761,20 @@ io.on('connection', (socket) => {
             let votingType = '';
             let votingData = {};
 
-            if (room.gameData.currentPhase === 'teamVote') {
+            if (room.gameData.currentPhase === 'teamSelection') {
+                // 隊長選擇隊員階段
+                const currentLeader = room.players.get(room.gameData.currentLeader);
+                votingData = {
+                    isLeader: room.gameData.currentLeader === socket.id,
+                    leaderName: currentLeader ? currentLeader.name : '',
+                    currentMission: room.gameData.currentMission,
+                    requiredTeamSize: room.gameData.missionRequirements[room.gameData.currentMission - 1]
+                };
+                if (room.gameData.currentLeader === socket.id) {
+                    needsVoting = true;
+                    votingType = 'teamSelection';
+                }
+            } else if (room.gameData.currentPhase === 'teamVote') {
                 needsVoting = true;
                 votingType = 'team';
                 // 提供隊伍投票所需的資料
@@ -786,6 +799,22 @@ io.on('connection', (socket) => {
                 // 檢查玩家是否是湖中女神持有者
                 needsVoting = room.gameData.lakeLadyHolder === socket.id;
                 votingType = 'lakeLady';
+            } else if (room.gameData.currentPhase === 'assassination') {
+                // 刺殺階段
+                const assassinPlayer = Array.from(room.players.values()).find(p =>
+                    p.role === '刺客' || (p.role === '摩甘娜' && !Array.from(room.players.values()).some(player => player.role === '刺客'))
+                );
+                const isAssassin = assassinPlayer && assassinPlayer.id === socket.id;
+                if (isAssassin) {
+                    needsVoting = true;
+                    votingType = 'assassination';
+                    // 提供刺殺所需的資料
+                    const goodPlayers = Array.from(room.players.values()).filter(p => !p.isEvil);
+                    votingData = {
+                        targets: goodPlayers.map(p => p.name),
+                        isAssassin: true
+                    };
+                }
             }
 
             socket.emit('gameReconnected', {
@@ -1029,19 +1058,26 @@ io.on('connection', (socket) => {
         const { roomCode, vote } = data;
         const room = rooms.get(roomCode);
         const playerInfo = players.get(socket.id);
-        
+
         if (!room || !playerInfo || room.gameData.currentPhase !== 'teamVote') return;
-        
-        // 記錄投票
-        room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
-        
+
+        // 檢查是否已經投過票
+        const existingVoteIndex = room.gameData.votes.findIndex(v => v.playerId === socket.id);
+        if (existingVoteIndex !== -1) {
+            // 已經投過票，更新投票
+            room.gameData.votes[existingVoteIndex] = { playerId: socket.id, playerName: playerInfo.playerName, vote };
+        } else {
+            // 記錄新投票
+            room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
+        }
+
         // 通知投票更新
         io.to(roomCode).emit('voteUpdate', {
             voteType: 'team',
             currentCount: room.gameData.votes.length,
             totalCount: room.players.size
         });
-        
+
         // 檢查是否所有人都投票了
         if (room.gameData.votes.length === room.players.size) {
             processTeamVoteResult(room, io);
@@ -1053,22 +1089,29 @@ io.on('connection', (socket) => {
         const { roomCode, vote } = data;
         const room = rooms.get(roomCode);
         const playerInfo = players.get(socket.id);
-        
+
         if (!room || !playerInfo || room.gameData.currentPhase !== 'missionVote') return;
-        
+
         // 檢查玩家是否在隊伍中
         if (!room.gameData.selectedPlayers.includes(socket.id)) return;
-        
-        // 記錄投票
-        room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
-        
+
+        // 檢查是否已經投過票
+        const existingVoteIndex = room.gameData.votes.findIndex(v => v.playerId === socket.id);
+        if (existingVoteIndex !== -1) {
+            // 已經投過票，更新投票
+            room.gameData.votes[existingVoteIndex] = { playerId: socket.id, playerName: playerInfo.playerName, vote };
+        } else {
+            // 記錄新投票
+            room.gameData.votes.push({ playerId: socket.id, playerName: playerInfo.playerName, vote });
+        }
+
         // 通知投票更新
         io.to(roomCode).emit('voteUpdate', {
             voteType: 'mission',
             currentCount: room.gameData.votes.length,
             totalCount: room.gameData.selectedPlayers.length
         });
-        
+
         // 檢查是否所有隊員都投票了
         if (room.gameData.votes.length === room.gameData.selectedPlayers.length) {
             processMissionVoteResult(room, io);
