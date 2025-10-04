@@ -1059,7 +1059,6 @@ io.on('connection', (socket) => {
 
         // 更新遊戲狀態
         room.gameState = 'playing';
-        const playerCount = playersArray.length;
         room.gameData = {
             currentPhase: 'leaderSelection',
             currentMission: 1,
