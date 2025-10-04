@@ -453,32 +453,54 @@ function shouldUseLakeLady(room) {
 
 // 開始湖中女神階段
 function startLakeLady(room, io) {
-    room.gameData.currentPhase = 'lakeLady';
-
-    // 湖中女神持有者在遊戲開始時就已經設定（第一個隊長的前一位）
     const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
 
-    // 過濾可查驗的目標：排除自己和曾經持有過湖中女神的玩家
+    if (!holderPlayer) {
+        console.warn(`找不到湖中女神持有者，跳過湖中女神階段`);
+        continueGameAfterLakeLady(room, io);
+        return;
+    }
+
     const availableTargets = Array.from(room.players.values())
         .filter(p => p.id !== room.gameData.lakeLadyHolder &&
                     !room.gameData.lakeLadyPreviousHolders.includes(p.id))
         .map(p => p.name);
 
-    console.log(`湖中女神階段開始，持有者：${holderPlayer.name}，可選目標：${availableTargets.join(', ')}`);
+    if (availableTargets.length === 0) {
+        console.log(`湖中女神階段跳過，${holderPlayer.name} 沒有可查驗的目標`);
+        if (!room.gameData.lakeLadyUsed.includes(room.gameData.currentMission)) {
+            room.gameData.lakeLadyUsed.push(room.gameData.currentMission);
+        }
+        room.gameData.enableLakeLady = false;
+
+        io.to(room.id).emit('lakeLadyUnavailable', {
+            holderName: holderPlayer.name
+        });
+
+        if (room.gameData.currentMission < 5) {
+            continueGameAfterLakeLady(room, io);
+        } else {
+            console.log('湖中女神階段跳過，所有任務已完成');
+        }
+        return;
+    }
+
+    room.gameData.currentPhase = 'lakeLady';
+
+    console.log(`湖中女神階段開始，持有者為 ${holderPlayer.name}，可查驗目標：${availableTargets.join(', ')}`);
 
     io.to(room.id).emit('lakeLadyStart', {
         holderName: holderPlayer.name,
         availableTargets: availableTargets
     });
 
-    // 通知所有玩家當前遊戲狀態
     io.to(room.id).emit('gameStateUpdate', {
         currentPhase: 'lakeLady',
         currentMission: room.gameData.currentMission,
         currentLeader: room.gameData.currentLeader,
         lakeLadyHolder: room.gameData.lakeLadyHolder,
         lakeLadyHolderName: holderPlayer.name,
-        statusMessage: `等待 ${holderPlayer.name} 使用湖中女神查驗...`
+        statusMessage: `等待 ${holderPlayer.name} 使用湖中女神...`
     });
 }
 

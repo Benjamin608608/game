@@ -444,6 +444,10 @@ class MultiplayerAvalonGame {
         this.socket.on('lakeLadyPublicResult', (data) => {
             this.showMessage(`🏔️ 湖中女神：${data.holderName} 查驗了 ${data.targetName} 的身份`, 'info');
         });
+        this.socket.on('lakeLadyUnavailable', (data = {}) => {
+            this.handleLakeLadyUnavailable(data);
+        });
+
 
         // 刺殺階段事件
         this.socket.on('assassinationStart', (data) => {
@@ -1437,6 +1441,11 @@ class MultiplayerAvalonGame {
         const playersDiv = document.getElementById('lakeLadyPlayers');
         playersDiv.innerHTML = '';
         
+        if (!Array.isArray(availableTargets) || availableTargets.length === 0) {
+            this.handleLakeLadyUnavailable({});
+            return;
+        }
+        
         availableTargets.forEach(playerName => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'lake-lady-player';
@@ -1487,6 +1496,49 @@ class MultiplayerAvalonGame {
             }
         }, 5000);
     }
+    handleLakeLadyUnavailable(data = {}) {
+        clearTimeout(this.lakeLadyAutoConfirmTimer);
+        this.lakeLadyAutoConfirmTimer = null;
+
+        this.hideAllVotingSections();
+
+        const status = document.getElementById('lakeLadyStatus');
+        if (status) {
+            status.textContent = '湖中女神沒有可查驗對象，本輪自動跳過。';
+        }
+
+        const playersDiv = document.getElementById('lakeLadyPlayers');
+        if (playersDiv) {
+            playersDiv.innerHTML = '';
+        }
+
+        const resultDiv = document.getElementById('lakeLadyResult');
+        if (resultDiv) {
+            resultDiv.innerHTML = '';
+            resultDiv.className = 'lake-lady-result';
+        }
+
+        const section = document.getElementById('lakeLadySection');
+        if (section) {
+            section.style.display = 'none';
+        }
+
+        const resultSection = document.getElementById('lakeLadyResultSection');
+        if (resultSection) {
+            resultSection.style.display = 'none';
+        }
+
+        const confirmBtn = document.getElementById('lakeLadyConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+        }
+
+        this.lakeLadyTarget = null;
+
+        const holderSuffix = data.holderName ? ' ' + data.holderName : '';
+        this.showMessage('湖中女神持有者' + holderSuffix + '本輪沒有可查驗對象，已自動跳過。', 'info');
+    }
+
 
     // 顯示手動選擇隊長界面
     showManualLeaderSelection(players = this.allPlayers) {
