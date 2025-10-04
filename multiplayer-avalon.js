@@ -1511,7 +1511,7 @@ class MultiplayerAvalonGame {
 
         const status = document.getElementById('lakeLadyStatus');
         if (status) {
-            status.textContent = 'No available targets for Lake Lady this round. Skipping automatically.';
+            status.textContent = '本回合湖中女神沒有可查驗的目標，自動跳過。';
         }
 
         const playersDiv = document.getElementById('lakeLadyPlayers');
@@ -1543,7 +1543,7 @@ class MultiplayerAvalonGame {
         this.lakeLadyTarget = null;
 
         const holderSuffix = data.holderName ? ' ' + data.holderName : '';
-        this.showMessage('Lake Lady holder' + holderSuffix + ' has no available targets this round and the phase is skipped automatically.', 'info');
+        this.showMessage('湖中女神持有者' + holderSuffix + ' 本回合沒有可查驗的目標，自動跳過此階段。', 'info');
     }
 
 
@@ -1586,9 +1586,9 @@ class MultiplayerAvalonGame {
         leaderSelectionSection.innerHTML = '';
 
         const title = document.createElement('h3');
-        title.textContent = 'Select First Leader';
+        title.textContent = '選擇第一個隊長';
         const description = document.createElement('p');
-        description.textContent = 'Choose a player to start as the first leader.';
+        description.textContent = '請選擇一名玩家作為第一個隊長。';
 
         const grid = document.createElement('div');
         grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0;';
