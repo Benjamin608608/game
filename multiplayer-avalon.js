@@ -1651,8 +1651,8 @@ class MultiplayerAvalonGame {
                 <div id="currentPlayerDisplay">準備轉盤...</div>
             </div>
             <div class="spinner-players-list">
-                ${playerList.map((player, index) => 
-                    `<div class="spinner-player-item" data-index="${index}">${player.name}</div>`
+                ${playerList.map((player, index) =>
+                    `<div class="spinner-player-item" data-index="${index}">${player.name || player.playerName || 'Player ' + (index + 1)}</div>`
                 ).join('')}
             </div>
         `;

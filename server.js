@@ -1094,18 +1094,6 @@ io.on('connection', (socket) => {
             targetName: targetName
         });
 
-        // 添加湖中女神查驗記錄
-        io.to(roomCode).emit('voteResult', {
-            message: `🏔️ 湖中女神查驗：${playerInfo.playerName} 查驗了 ${targetName}`,
-            success: true,
-            voteDetails: {
-                type: 'lakeLady',
-                holderName: playerInfo.playerName,
-                targetName: targetName,
-                mission: room.gameData.currentMission
-            }
-        });
-
         // 記錄當前持有者為曾經持有過湖中女神的玩家
         if (!room.gameData.lakeLadyPreviousHolders.includes(socket.id)) {
             room.gameData.lakeLadyPreviousHolders.push(socket.id);
