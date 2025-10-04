@@ -630,6 +630,11 @@ function removePlayerFromRoom(room, socketId, playerInfo, io, options = {}) {
     room.players.delete(socketId);
     players.delete(socketId);
 
+    // 從玩家順序中移除（只有主動離開才移除，斷線重連需要保留順序）
+    if (shouldTransferHost && room.playerOrder) {
+        room.playerOrder = room.playerOrder.filter(id => id !== socketId);
+    }
+
     const targetSocket = io.sockets.sockets.get(socketId);
     if (targetSocket) {
         targetSocket.isLeavingRoom = true;
@@ -868,7 +873,8 @@ io.on('connection', (socket) => {
             hostId: socket.id,
             players: new Map(),
             gameState: 'waiting', // waiting, playing, finished
-            gameData: null
+            gameData: null,
+            playerOrder: [] // 保存玩家順序（由房主手動排序）
         };
 
         // 添加房主到房間
@@ -879,6 +885,9 @@ io.on('connection', (socket) => {
             role: null,
             ipAddress: clientIP
         });
+
+        // 初始化玩家順序
+        room.playerOrder = [socket.id];
 
         rooms.set(roomCode, room);
         players.set(socket.id, { roomCode, playerName });
@@ -930,6 +939,12 @@ io.on('connection', (socket) => {
             ipAddress: clientIP
         });
 
+        // 添加到玩家順序列表末尾（如果房主沒有手動排序，就按加入順序）
+        if (!room.playerOrder) {
+            room.playerOrder = [];
+        }
+        room.playerOrder.push(socket.id);
+
         players.set(socket.id, { roomCode, playerName });
         socket.join(roomCode);
 
@@ -976,18 +991,28 @@ io.on('connection', (socket) => {
                 socket.emit('error', { message: '自定義角色配置無效' });
                 return;
             }
-            
+
             // 驗證角色合理性
             const validation = validateCustomRoles(customRoles);
             if (!validation.valid) {
                 socket.emit('error', { message: validation.message });
                 return;
             }
-            
+
             roles = shuffleArray([...customRoles]);
         }
-        
-        const playersArray = Array.from(room.players.values());
+
+        // 使用房主手動排序的順序，如果沒有則使用預設順序
+        let playersArray;
+        if (room.playerOrder && room.playerOrder.length === playerCount) {
+            // 使用房主手動排序的順序
+            playersArray = room.playerOrder.map(id => room.players.get(id));
+            console.log(`使用手動排序：${playersArray.map(p => p.name).join(' -> ')}`);
+        } else {
+            // 沒有手動排序，使用預設順序
+            playersArray = Array.from(room.players.values());
+            console.log(`使用預設順序：${playersArray.map(p => p.name).join(' -> ')}`);
+        }
         
         // 為每個玩家分配角色
         playersArray.forEach((player, index) => {
@@ -1180,9 +1205,12 @@ io.on('connection', (socket) => {
             return;
         }
         
+        // 保存玩家順序到房間資料
+        room.playerOrder = newOrder;
+
         // 更新玩家順序
         const orderedPlayers = newOrder.map(id => room.players.get(id));
-        
+
         // 通知所有玩家順序更新
         io.to(roomCode).emit('playerOrderUpdated', {
             players: orderedPlayers.map(p => ({
@@ -1191,7 +1219,7 @@ io.on('connection', (socket) => {
                 isHost: p.isHost
             }))
         });
-        
+
         console.log(`房間 ${roomCode} 玩家順序已更新：${orderedPlayers.map(p => p.name).join(' -> ')}`);
     });
 
