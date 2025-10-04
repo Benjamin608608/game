@@ -1652,7 +1652,7 @@ class MultiplayerAvalonGame {
             const btn = document.createElement('button');
             btn.className = 'btn';
             btn.dataset.playerId = player.id;
-            btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: white;';
+            btn.style.cssText = 'padding: 15px; font-size: 1.1em; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: black;';
             btn.textContent = displayName + (player.isHost ? ' (房主)' : '');
             btn.addEventListener('click', () => this.selectManualLeader(player.id, displayName));
             grid.appendChild(btn);
