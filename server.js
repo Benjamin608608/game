@@ -775,6 +775,57 @@ io.on('connection', (socket) => {
             }
         }
 
+        // 更新 gameData 中所有包含舊 socket ID 的欄位
+        if (room.gameData) {
+            // 更新當前隊長
+            if (room.gameData.currentLeader === oldSocketId) {
+                room.gameData.currentLeader = socket.id;
+                console.log(`更新隊長ID：${oldSocketId} -> ${socket.id}`);
+            }
+
+            // 更新任務隊伍成員
+            if (room.gameData.selectedPlayers) {
+                const teamIndex = room.gameData.selectedPlayers.indexOf(oldSocketId);
+                if (teamIndex !== -1) {
+                    room.gameData.selectedPlayers[teamIndex] = socket.id;
+                    console.log(`更新任務隊伍成員ID：${oldSocketId} -> ${socket.id}`);
+                }
+            }
+
+            // 更新湖中女神持有者
+            if (room.gameData.lakeLadyHolder === oldSocketId) {
+                room.gameData.lakeLadyHolder = socket.id;
+                console.log(`更新湖中女神持有者ID：${oldSocketId} -> ${socket.id}`);
+            }
+
+            // 更新湖中女神曾經持有者列表
+            if (room.gameData.lakeLadyPreviousHolders) {
+                const holderIndex = room.gameData.lakeLadyPreviousHolders.indexOf(oldSocketId);
+                if (holderIndex !== -1) {
+                    room.gameData.lakeLadyPreviousHolders[holderIndex] = socket.id;
+                }
+            }
+
+            // 更新投票記錄中的玩家ID
+            if (room.gameData.votes) {
+                room.gameData.votes.forEach(vote => {
+                    if (vote.playerId === oldSocketId) {
+                        vote.playerId = socket.id;
+                    }
+                });
+            }
+
+            // 更新湖中女神查驗結果中的ID
+            if (room.gameData.lakeLadyCurrentResult) {
+                if (room.gameData.lakeLadyCurrentResult.holderId === oldSocketId) {
+                    room.gameData.lakeLadyCurrentResult.holderId = socket.id;
+                }
+                if (room.gameData.lakeLadyCurrentResult.targetId === oldSocketId) {
+                    room.gameData.lakeLadyCurrentResult.targetId = socket.id;
+                }
+            }
+        }
+
         // 更新玩家映射
         players.set(socket.id, { roomCode, playerName });
 
