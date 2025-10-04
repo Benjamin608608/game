@@ -914,6 +914,252 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
         }
 
+        /* 手機優化 - 針對小螢幕設備 */
+        @media (max-width: 640px) {
+            body {
+                padding: 12px 8px;
+            }
+
+            .container {
+                gap: 16px;
+            }
+
+            .game-title {
+                font-size: 1.8rem;
+                padding: 14px 12px;
+            }
+
+            .screen {
+                padding: 16px 14px;
+                gap: 14px;
+                border-radius: 16px;
+            }
+
+            .screen h2 {
+                font-size: 1.4rem;
+            }
+
+            h3 {
+                font-size: 1.1rem;
+            }
+
+            h4 {
+                font-size: 1rem;
+            }
+
+            p {
+                font-size: 0.95rem;
+                line-height: 1.5;
+            }
+
+            /* 加大按鈕以便觸控 */
+            .btn {
+                padding: 14px 16px;
+                font-size: 1rem;
+                min-height: 48px;
+                border-radius: 10px;
+            }
+
+            /* 加大輸入框 */
+            input[type="text"],
+            input[type="number"] {
+                padding: 16px 14px;
+                font-size: 1rem;
+                min-height: 48px;
+            }
+
+            /* 優化玩家列表顯示 */
+            .player-list {
+                gap: 8px;
+            }
+
+            .player-item {
+                padding: 12px;
+                font-size: 0.95rem;
+            }
+
+            /* 優化房間選項卡片 */
+            .room-option {
+                padding: 16px;
+            }
+
+            .room-option h3 {
+                font-size: 1.15rem;
+            }
+
+            /* 優化遊戲資訊區塊 */
+            .game-info {
+                padding: 14px;
+                gap: 10px;
+            }
+
+            .info-item {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+
+            /* 優化任務軌道 */
+            .mission-track {
+                gap: 6px;
+                padding: 12px 8px;
+            }
+
+            .mission-item {
+                width: 36px;
+                height: 36px;
+                font-size: 0.85rem;
+            }
+
+            /* 優化投票區域 */
+            .voting-section {
+                padding: 14px;
+                gap: 12px;
+            }
+
+            .vote-options {
+                gap: 10px;
+            }
+
+            /* 優化角色資訊卡片 */
+            .role-card {
+                padding: 14px;
+                gap: 10px;
+            }
+
+            /* 優化團隊選擇區域 */
+            .team-selection {
+                gap: 12px;
+            }
+
+            .selectable-players {
+                gap: 8px;
+            }
+
+            .selectable-player {
+                padding: 12px;
+                font-size: 0.95rem;
+                min-height: 48px;
+            }
+
+            /* 優化訊息顯示 */
+            .message {
+                padding: 12px 14px;
+                font-size: 0.95rem;
+                max-width: calc(100vw - 32px);
+            }
+
+            /* 優化設定區域 */
+            .game-settings {
+                gap: 12px;
+            }
+
+            .setting-group {
+                padding: 12px;
+                gap: 10px;
+            }
+
+            .setting-item {
+                padding: 10px;
+            }
+
+            /* 優化角色選擇 */
+            .role-checkbox {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+
+            .role-category {
+                padding: 14px;
+            }
+
+            /* 優化其他玩家列表 */
+            .other-players {
+                gap: 8px;
+            }
+
+            .other-player-item {
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+
+            /* 優化轉盤 */
+            .spinner {
+                width: min(260px, 85vw);
+                height: min(260px, 85vw);
+            }
+
+            /* 減少間距讓內容更緊湊 */
+            .space-y-4 {
+                gap: 12px;
+            }
+
+            /* 優化狀態文字 */
+            .status-text {
+                font-size: 0.95rem;
+                padding: 10px;
+            }
+
+            /* 優化圖例 */
+            .legend-items {
+                gap: 6px;
+            }
+
+            .legend-item {
+                padding: 6px 8px;
+                font-size: 0.85rem;
+            }
+
+            /* 優化湖中女神界面 */
+            .lake-lady-targets {
+                gap: 8px;
+            }
+
+            .lake-lady-target {
+                padding: 12px;
+                font-size: 0.95rem;
+                min-height: 48px;
+            }
+
+            /* 優化刺殺界面 */
+            .assassination-targets {
+                gap: 8px;
+            }
+
+            .assassination-target {
+                padding: 12px;
+                font-size: 0.95rem;
+                min-height: 48px;
+            }
+        }
+
+        /* 極小螢幕優化 */
+        @media (max-width: 380px) {
+            .game-title {
+                font-size: 1.5rem;
+                padding: 12px 10px;
+            }
+
+            .screen {
+                padding: 14px 12px;
+            }
+
+            .btn {
+                padding: 12px 14px;
+                font-size: 0.95rem;
+            }
+
+            .mission-item {
+                width: 32px;
+                height: 32px;
+                font-size: 0.8rem;
+            }
+
+            .spinner {
+                width: min(220px, 90vw);
+                height: min(220px, 90vw);
+            }
+        }
+
         @media (min-width: 1024px) {
             body {
                 padding: clamp(20px, 6vw, 48px);
