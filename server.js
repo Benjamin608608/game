@@ -848,9 +848,26 @@ io.on('connection', (socket) => {
                     teamSize: room.gameData.selectedPlayers.length
                 };
             } else if (room.gameData.currentPhase === 'lakeLady') {
-                // 檢查玩家是否是湖中女神持有者
-                needsVoting = room.gameData.lakeLadyHolder === socket.id;
-                votingType = 'lakeLady';
+                // 檢查玩家是否是原查驗者且有待確認的結果
+                const hasResult = room.gameData.lakeLadyCurrentResult &&
+                                 room.gameData.lakeLadyCurrentResult.holderId === socket.id;
+
+                if (hasResult) {
+                    // 有查驗結果待確認
+                    needsVoting = false;
+                    votingType = 'lakeLady';
+                    votingData = {
+                        hasResult: true,
+                        result: room.gameData.lakeLadyCurrentResult
+                    };
+                } else if (room.gameData.lakeLadyHolder === socket.id) {
+                    // 是當前持有者且未查驗
+                    needsVoting = true;
+                    votingType = 'lakeLady';
+                    votingData = {
+                        hasResult: false
+                    };
+                }
             } else if (room.gameData.currentPhase === 'assassination') {
                 // 刺殺階段
                 const assassinPlayer = getOrderedPlayers(room).find(p =>
@@ -1203,6 +1220,15 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // 保存查驗結果（供重連使用）
+        room.gameData.lakeLadyCurrentResult = {
+            holderId: socket.id,
+            holderName: playerInfo.playerName,
+            targetId: targetPlayer.id,
+            targetName: targetName,
+            isEvil: targetPlayer.isEvil
+        };
+
         // 發送結果給湖中女神持有者
         io.to(socket.id).emit('lakeLadyResult', {
             holderId: socket.id,
@@ -1211,7 +1237,7 @@ io.on('connection', (socket) => {
             targetName: targetName,
             isEvil: targetPlayer.isEvil
         });
-        
+
         // 通知其他玩家（包括湖中女神持有者）
         io.to(roomCode).emit('lakeLadyPublicResult', {
             holderId: socket.id,
@@ -1329,6 +1355,9 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomCode);
 
         if (!room || room.gameData.currentPhase !== 'lakeLady') return;
+
+        // 清除查驗結果
+        room.gameData.lakeLadyCurrentResult = null;
 
         // 檢查是否還有後續任務
         if (room.gameData.currentMission < 5) {

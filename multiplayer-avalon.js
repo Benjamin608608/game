@@ -458,7 +458,13 @@ class MultiplayerAvalonGame {
                         }
                     } else if (data.votingStatus.votingType === 'lakeLady') {
                         // 恢復湖中女神界面
-                        if (data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
+                        if (vData.hasResult) {
+                            // 已經查驗過，顯示結果
+                            const result = vData.result;
+                            const alignmentText = result.isEvil ? '壞人' : '好人';
+                            this.showLakeLadyResult(result.targetName, result.isEvil);
+                            this.showMessage('請確認查驗結果以繼續', 'info');
+                        } else if (data.votingStatus.needsVoting) {
                             this.requestLakeLadyTargets();
                             this.showMessage('請繼續使用湖中女神查驗', 'info');
                         } else {
