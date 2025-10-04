@@ -1506,21 +1506,36 @@ io.on('connection', (socket) => {
                 // 意外斷線，給予重連機會
                 console.log(`玩家 ${playerInfo.playerName} 意外斷線，保留30秒重連時間`);
 
-                // 30秒後如果沒有重連，才真正移除玩家
+                // 30秒後如果沒有重連，轉移房主權限但保留玩家資料以便稍後重連
                 setTimeout(() => {
                     const currentRoom = rooms.get(playerInfo.roomCode);
-                    const currentPlayerInfo = players.get(socket.id);
+                    const existingPlayer = currentRoom ? Array.from(currentRoom.players.values()).find(p => p.name === playerInfo.playerName) : null;
 
-                    if (currentRoom && currentRoom.players.has(socket.id) && currentPlayerInfo) {
-                        // 玩家沒有重連，移除玩家
-                        // 如果是房主且超時未重連，則轉移房主權限
-                        const isHost = currentRoom.hostId === socket.id;
-                        console.log(`玩家 ${playerInfo.playerName} 重連超時，移除玩家${isHost ? '（轉移房主權限）' : ''}`);
-                        removePlayerFromRoom(currentRoom, socket.id, currentPlayerInfo, io, {
-                            shouldTransferHost: isHost,
-                            wasKicked: false,
-                            disconnectSocket: false
-                        });
+                    if (currentRoom && existingPlayer && existingPlayer.id === socket.id) {
+                        // 玩家沒有重連，但保留資料允許稍後重連
+                        const wasHost = currentRoom.hostId === socket.id;
+
+                        if (wasHost) {
+                            // 轉移房主權限給其他玩家
+                            const otherPlayers = Array.from(currentRoom.players.values()).filter(p => p.id !== socket.id);
+                            if (otherPlayers.length > 0) {
+                                const newHost = otherPlayers[0];
+                                newHost.isHost = true;
+                                currentRoom.hostId = newHost.id;
+
+                                // 移除原房主的房主狀態
+                                existingPlayer.isHost = false;
+
+                                io.to(playerInfo.roomCode).emit('hostChanged', {
+                                    newHostId: newHost.id,
+                                    newHostName: newHost.name
+                                });
+
+                                console.log(`玩家 ${playerInfo.playerName} 重連超時，房主權限轉移給 ${newHost.name}`);
+                            }
+                        }
+
+                        console.log(`玩家 ${playerInfo.playerName} 重連超時，但保留玩家資料等待重連`);
                     }
                 }, 30000); // 30秒重連時間
             } else {
