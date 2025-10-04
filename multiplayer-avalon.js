@@ -1527,17 +1527,17 @@ class MultiplayerAvalonGame {
     showLakeLadyResult(targetName, isEvil) {
         this.hideAllVotingSections();
 
-        const alignmentText = isEvil ? 'Evil' : 'Good';
+        const alignmentText = isEvil ? '壞人' : '好人';
 
         const status = document.getElementById('lakeLadyStatus');
         if (status) {
-            status.textContent = 'You inspected ' + targetName + '. Result: ' + alignmentText + '. Confirm below.';
+            status.textContent = '你查驗了 ' + targetName + '，結果：' + alignmentText + '。請確認以繼續。';
         }
 
         const resultDiv = document.getElementById('lakeLadyResult');
         resultDiv.className = 'lake-lady-result ' + (isEvil ? 'evil' : 'good');
         resultDiv.innerHTML = '<div><strong>' + targetName + '</strong></div>' +
-            '<div>Alignment: ' + alignmentText + '</div>';
+            '<div>陣營：' + alignmentText + '</div>';
 
         const resultSection = document.getElementById('lakeLadyResultSection');
         resultSection.style.display = 'block';
@@ -1545,10 +1545,10 @@ class MultiplayerAvalonGame {
         const confirmBtn = document.getElementById('lakeLadyConfirmBtn');
         if (confirmBtn) {
             confirmBtn.disabled = false;
-            confirmBtn.textContent = 'Confirm and continue';
+            confirmBtn.textContent = '確認並繼續';
         }
 
-        this.showMessage('You inspected ' + targetName + '. Result: ' + alignmentText + '.', isEvil ? 'error' : 'success');
+        this.showMessage('你查驗了 ' + targetName + '，結果：' + alignmentText + '。', isEvil ? 'error' : 'success');
 
         clearTimeout(this.lakeLadyAutoConfirmTimer);
         this.lakeLadyAutoConfirmTimer = setTimeout(() => {
