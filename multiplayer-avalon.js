@@ -927,37 +927,91 @@ class MultiplayerAvalonGame {
             if (this.isReordering && this.isHost) {
                 playerItem.classList.add('draggable');
                 playerItem.draggable = true;
-                
-                // 拖拽事件
+
+                // 桌面拖拽事件
                 playerItem.addEventListener('dragstart', (e) => {
                     this.draggedPlayer = { id: player.id, index: index };
                     playerItem.classList.add('dragging');
                 });
-                
+
                 playerItem.addEventListener('dragend', (e) => {
                     playerItem.classList.remove('dragging');
                     document.querySelectorAll('.player-item').forEach(item => {
                         item.classList.remove('drag-over');
                     });
                 });
-                
+
                 playerItem.addEventListener('dragover', (e) => {
                     e.preventDefault();
                     playerItem.classList.add('drag-over');
                 });
-                
+
                 playerItem.addEventListener('dragleave', (e) => {
                     playerItem.classList.remove('drag-over');
                 });
-                
+
                 playerItem.addEventListener('drop', (e) => {
                     e.preventDefault();
                     playerItem.classList.remove('drag-over');
-                    
+
                     if (this.draggedPlayer && this.draggedPlayer.id !== player.id) {
                         this.reorderPlayers(this.draggedPlayer.index, index);
                     }
                 });
+
+                // 手機觸控事件
+                let touchStartY = 0;
+                let touchStartX = 0;
+
+                playerItem.addEventListener('touchstart', (e) => {
+                    // 防止頁面滾動
+                    e.preventDefault();
+                    touchStartY = e.touches[0].clientY;
+                    touchStartX = e.touches[0].clientX;
+                    this.draggedPlayer = { id: player.id, index: index };
+                    playerItem.classList.add('dragging');
+                }, { passive: false });
+
+                playerItem.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+
+                    // 移除所有 drag-over 樣式
+                    document.querySelectorAll('.player-item').forEach(item => {
+                        item.classList.remove('drag-over');
+                    });
+
+                    // 找到觸控位置下的玩家項目
+                    const targetItem = element?.closest('.player-item');
+                    if (targetItem && targetItem !== playerItem) {
+                        targetItem.classList.add('drag-over');
+                    }
+                }, { passive: false });
+
+                playerItem.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    playerItem.classList.remove('dragging');
+
+                    const touch = e.changedTouches[0];
+                    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                    const targetItem = element?.closest('.player-item');
+
+                    // 清除所有 drag-over 樣式
+                    document.querySelectorAll('.player-item').forEach(item => {
+                        item.classList.remove('drag-over');
+                    });
+
+                    // 執行重新排序
+                    if (targetItem && this.draggedPlayer) {
+                        const targetIndex = parseInt(targetItem.dataset.playerIndex);
+                        if (!isNaN(targetIndex) && targetIndex !== this.draggedPlayer.index) {
+                            this.reorderPlayers(this.draggedPlayer.index, targetIndex);
+                        }
+                    }
+
+                    this.draggedPlayer = null;
+                }, { passive: false });
             }
             
             playerItem.innerHTML = `
