@@ -45,7 +45,7 @@ app.get('/admin/rooms', (req, res) => {
     const roomsInfo = [];
 
     rooms.forEach((room, roomCode) => {
-        const playersInfo = Array.from(room.players.values()).map(player => ({
+        const playersInfo = getOrderedPlayers(room).map(player => ({
             id: player.id,
             name: player.name,
             isHost: player.isHost,
@@ -388,9 +388,9 @@ function processMissionVoteResult(room, io) {
         const successCount = room.gameData.missionResults.filter(r => r).length;
         if (successCount >= 3) {
             // 好人陣營完成3個任務，檢查是否需要進入刺殺階段
-            const hasAssassin = Array.from(room.players.values()).some(p => p.role === '刺客');
-            const hasMorganaWithAbility = room.gameData.morganaAssassinAbility && 
-                                        Array.from(room.players.values()).some(p => p.role === '摩甘娜');
+            const hasAssassin = getOrderedPlayers(room).some(p => p.role === '刺客');
+            const hasMorganaWithAbility = room.gameData.morganaAssassinAbility &&
+                                        getOrderedPlayers(room).some(p => p.role === '摩甘娜');
             
             if (hasAssassin || hasMorganaWithAbility) {
                 // 有刺客或摩甘娜有刺殺能力，進入刺殺階段
@@ -461,7 +461,7 @@ function startLakeLady(room, io) {
         return;
     }
 
-    const availableTargets = Array.from(room.players.values())
+    const availableTargets = getOrderedPlayers(room)
         .filter(p => p.id !== room.gameData.lakeLadyHolder &&
                     !room.gameData.lakeLadyPreviousHolders.includes(p.id))
         .map(p => p.name);
@@ -558,9 +558,9 @@ function nextLeader(room) {
 
 // 開始刺殺階段
 function startAssassinationPhase(room, io) {
-    const assassin = Array.from(room.players.values()).find(p => p.role === '刺客');
-    const morganaWithAbility = room.gameData.morganaAssassinAbility ? 
-        Array.from(room.players.values()).find(p => p.role === '摩甘娜') : null;
+    const assassin = getOrderedPlayers(room).find(p => p.role === '刺客');
+    const morganaWithAbility = room.gameData.morganaAssassinAbility ?
+        getOrderedPlayers(room).find(p => p.role === '摩甘娜') : null;
     
     let assassinPlayer = assassin || morganaWithAbility;
     
@@ -571,7 +571,7 @@ function startAssassinationPhase(room, io) {
     }
     
     // 獲取可以刺殺的目標（好人陣營）
-    const goodPlayers = Array.from(room.players.values())
+    const goodPlayers = getOrderedPlayers(room)
         .filter(p => !p.isEvil)
         .map(p => ({ id: p.id, name: p.name }));
     
@@ -599,11 +599,22 @@ function endGame(room, io, goodWins, message) {
     io.to(room.id).emit('gameEnded', {
         goodWins: goodWins,
         message: message,
-        roles: Array.from(room.players.values()).map(p => ({
+        roles: getOrderedPlayers(room).map(p => ({
             name: p.name,
             role: p.role
         }))
     });
+}
+
+// 獲取排序後的玩家列表
+function getOrderedPlayers(room) {
+    if (room.playerOrder && room.playerOrder.length === room.players.size) {
+        // 使用手動排序
+        return room.playerOrder.map(id => room.players.get(id)).filter(p => p !== undefined);
+    } else {
+        // 使用預設順序
+        return Array.from(room.players.values());
+    }
 }
 
 // 從房間移除玩家的通用函數
@@ -661,7 +672,7 @@ function removePlayerFromRoom(room, socketId, playerInfo, io, options = {}) {
     }
 
     // 通知其他玩家
-    const playersSnapshot = Array.from(room.players.values()).map(p => ({
+    const playersSnapshot = getOrderedPlayers(room).map(p => ({
         id: p.id,
         name: p.name,
         isHost: p.isHost,
@@ -728,7 +739,7 @@ io.on('connection', (socket) => {
         }
 
         // 檢查玩家是否在房間中
-        const existingPlayer = Array.from(room.players.values()).find(p => p.name === playerName);
+        const existingPlayer = getOrderedPlayers(room).find(p => p.name === playerName);
         if (!existingPlayer) {
             socket.emit('error', { message: '您不在此房間中' });
             return;
@@ -741,14 +752,32 @@ io.on('connection', (socket) => {
         }
         
         // 更新玩家連接ID和IP地址
+        const oldSocketId = existingPlayer.id;
         room.players.delete(existingPlayer.id);
         existingPlayer.id = socket.id;
         existingPlayer.ipAddress = clientIP; // 更新IP地址
         room.players.set(socket.id, existingPlayer);
 
+        // 更新玩家順序中的 socket ID
+        if (room.playerOrder) {
+            const orderIndex = room.playerOrder.indexOf(oldSocketId);
+            if (orderIndex !== -1) {
+                room.playerOrder[orderIndex] = socket.id;
+                console.log(`更新玩家順序：${oldSocketId} -> ${socket.id}`);
+            }
+        }
+
+        // 更新 gameData.playersOrder（如果遊戲中）
+        if (room.gameData && room.gameData.playersOrder) {
+            const gameOrderIndex = room.gameData.playersOrder.indexOf(oldSocketId);
+            if (gameOrderIndex !== -1) {
+                room.gameData.playersOrder[gameOrderIndex] = socket.id;
+            }
+        }
+
         // 更新玩家映射
         players.set(socket.id, { roomCode, playerName });
-        
+
         // 如果是房主，更新房主ID
         if (existingPlayer.isHost) {
             room.hostId = socket.id;
@@ -759,7 +788,7 @@ io.on('connection', (socket) => {
         
         if (room.gameState === 'playing') {
             // 遊戲進行中，發送當前遊戲狀態
-            const roleInfo = getRoleSpecificInfo(existingPlayer, Array.from(room.players.values()), room.gameData.showMordredIdentity);
+            const roleInfo = getRoleSpecificInfo(existingPlayer, getOrderedPlayers(room), room.gameData.showMordredIdentity);
 
             // 檢查玩家是否需要參與當前的投票
             let needsVoting = false;
@@ -806,15 +835,15 @@ io.on('connection', (socket) => {
                 votingType = 'lakeLady';
             } else if (room.gameData.currentPhase === 'assassination') {
                 // 刺殺階段
-                const assassinPlayer = Array.from(room.players.values()).find(p =>
-                    p.role === '刺客' || (p.role === '摩甘娜' && !Array.from(room.players.values()).some(player => player.role === '刺客'))
+                const assassinPlayer = getOrderedPlayers(room).find(p =>
+                    p.role === '刺客' || (p.role === '摩甘娜' && !getOrderedPlayers(room).some(player => player.role === '刺客'))
                 );
                 const isAssassin = assassinPlayer && assassinPlayer.id === socket.id;
                 if (isAssassin) {
                     needsVoting = true;
                     votingType = 'assassination';
                     // 提供刺殺所需的資料
-                    const goodPlayers = Array.from(room.players.values()).filter(p => !p.isEvil);
+                    const goodPlayers = getOrderedPlayers(room).filter(p => !p.isEvil);
                     votingData = {
                         targets: goodPlayers.map(p => p.name),
                         isAssassin: true
@@ -848,10 +877,12 @@ io.on('connection', (socket) => {
             });
         } else {
             // 遊戲未開始，回到大廳
+            const playersList = getOrderedPlayers(room);
+
             socket.emit('roomReconnected', {
                 roomCode,
                 isHost: existingPlayer.isHost,
-                players: Array.from(room.players.values())
+                players: playersList
             });
         }
         
@@ -893,10 +924,10 @@ io.on('connection', (socket) => {
         players.set(socket.id, { roomCode, playerName });
 
         socket.join(roomCode);
-        socket.emit('roomCreated', { 
-            roomCode, 
+        socket.emit('roomCreated', {
+            roomCode,
             isHost: true,
-            players: Array.from(room.players.values())
+            players: getOrderedPlayers(room)
         });
 
         console.log(`房間 ${roomCode} 創建成功，房主：${playerName}`);
@@ -924,7 +955,7 @@ io.on('connection', (socket) => {
         }
 
         // 檢查玩家名稱是否重複
-        const existingNames = Array.from(room.players.values()).map(p => p.name);
+        const existingNames = getOrderedPlayers(room).map(p => p.name);
         if (existingNames.includes(playerName)) {
             socket.emit('error', { message: '玩家名稱已存在' });
             return;
@@ -948,15 +979,15 @@ io.on('connection', (socket) => {
         players.set(socket.id, { roomCode, playerName });
         socket.join(roomCode);
 
-        const playersList = Array.from(room.players.values());
-        
+        const playersList = getOrderedPlayers(room);
+
         // 通知所有房間內的玩家
         io.to(roomCode).emit('playerJoined', {
             players: playersList,
             newPlayer: playerName
         });
 
-        socket.emit('roomJoined', { 
+        socket.emit('roomJoined', {
             roomCode,
             isHost: false,
             players: playersList
@@ -1002,17 +1033,9 @@ io.on('connection', (socket) => {
             roles = shuffleArray([...customRoles]);
         }
 
-        // 使用房主手動排序的順序，如果沒有則使用預設順序
-        let playersArray;
-        if (room.playerOrder && room.playerOrder.length === playerCount) {
-            // 使用房主手動排序的順序
-            playersArray = room.playerOrder.map(id => room.players.get(id));
-            console.log(`使用手動排序：${playersArray.map(p => p.name).join(' -> ')}`);
-        } else {
-            // 沒有手動排序，使用預設順序
-            playersArray = Array.from(room.players.values());
-            console.log(`使用預設順序：${playersArray.map(p => p.name).join(' -> ')}`);
-        }
+        // 使用房主手動排序的順序
+        const playersArray = getOrderedPlayers(room);
+        console.log(`玩家順序：${playersArray.map(p => p.name).join(' -> ')}`);
         
         // 為每個玩家分配角色
         playersArray.forEach((player, index) => {
@@ -1062,7 +1085,7 @@ io.on('connection', (socket) => {
 
         // 直接進入隊長選擇階段
         setTimeout(() => {
-            const playersLite = Array.from(room.players.values()).map(p => ({
+            const playersLite = getOrderedPlayers(room).map(p => ({
                 id: p.id,
                 name: p.name,
                 isHost: p.isHost
@@ -1152,7 +1175,7 @@ io.on('connection', (socket) => {
         if (!room || !playerInfo || room.gameData.currentPhase !== 'lakeLady') return;
         if (room.gameData.lakeLadyHolder !== socket.id) return;
 
-        const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetName);
+        const targetPlayer = getOrderedPlayers(room).find(p => p.name === targetName);
         if (!targetPlayer) return;
 
         // 檢查目標是否可以被查驗（不能是曾經持有過湖中女神的玩家）
@@ -1229,9 +1252,9 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomCode);
         
         if (!room || room.hostId !== socket.id || room.gameState === 'playing') return;
-        
+
         // 重置為原始加入順序（按照id順序）
-        const playersArray = Array.from(room.players.values()).sort((a, b) => a.id.localeCompare(b.id));
+        const playersArray = getOrderedPlayers(room).sort((a, b) => a.id.localeCompare(b.id));
         
         io.to(roomCode).emit('playerOrderUpdated', {
             players: playersArray.map(p => ({
@@ -1311,7 +1334,7 @@ io.on('connection', (socket) => {
         const holderPlayer = room.players.get(room.gameData.lakeLadyHolder);
 
         // 過濾可查驗的目標：排除自己和曾經持有過湖中女神的玩家
-        const availableTargets = Array.from(room.players.values())
+        const availableTargets = getOrderedPlayers(room)
             .filter(p => p.id !== room.gameData.lakeLadyHolder &&
                         !room.gameData.lakeLadyPreviousHolders.includes(p.id))
             .map(p => p.name);
@@ -1350,7 +1373,7 @@ io.on('connection', (socket) => {
                 success: true,
                 voteDetails: {
                     type: 'team',
-                    approveVoters: Array.from(room.players.values()).map(p => p.name), // 視為全員贊成
+                    approveVoters: getOrderedPlayers(room).map(p => p.name), // 視為全員贊成
                     rejectVoters: [],
                     mission: room.gameData.currentMission
                 }
@@ -1493,7 +1516,7 @@ io.on('connection', (socket) => {
         }
 
         // 找到被踢的玩家
-        const targetPlayer = Array.from(room.players.values()).find(p => p.name === targetPlayerName);
+        const targetPlayer = getOrderedPlayers(room).find(p => p.name === targetPlayerName);
         if (!targetPlayer) {
             socket.emit('error', { message: '找不到該玩家' });
             return;
