@@ -795,7 +795,21 @@ io.on('connection', (socket) => {
             let votingType = '';
             let votingData = {};
 
-            if (room.gameData.currentPhase === 'teamSelection') {
+            if (room.gameData.currentPhase === 'leaderSelection') {
+                // 隊長選擇階段
+                votingData = {
+                    manualSelection: room.gameData.manualLeaderSelection,
+                    players: getOrderedPlayers(room).map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        isHost: p.isHost
+                    }))
+                };
+                if (existingPlayer.isHost) {
+                    needsVoting = true;
+                    votingType = 'leaderSelection';
+                }
+            } else if (room.gameData.currentPhase === 'teamSelection') {
                 // 隊長選擇隊員階段
                 const currentLeader = room.players.get(room.gameData.currentLeader);
                 votingData = {
@@ -1045,6 +1059,7 @@ io.on('connection', (socket) => {
 
         // 更新遊戲狀態
         room.gameState = 'playing';
+        const playerCount = playersArray.length;
         room.gameData = {
             currentPhase: 'leaderSelection',
             currentMission: 1,
@@ -1060,7 +1075,8 @@ io.on('connection', (socket) => {
             lakeLadyHolder: null,
             lakeLadyUsed: [],
             lakeLadyPreviousHolders: [], // 記錄曾經持有過湖中女神的玩家
-            playersOrder: playersArray.map(p => p.id) // 保存玩家順序
+            playersOrder: playersArray.map(p => p.id), // 保存玩家順序
+            missionRequirements: [1, 2, 3, 4, 5].map(mission => getMissionPlayerCount(playerCount, mission))
         };
 
         // 通知所有玩家遊戲開始，為每個角色提供相應的資訊

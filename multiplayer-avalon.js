@@ -409,7 +409,21 @@ class MultiplayerAvalonGame {
                 setTimeout(() => {
                     const vData = data.votingStatus.votingData || {};
 
-                    if (data.votingStatus.votingType === 'teamSelection') {
+                    if (data.votingStatus.votingType === 'leaderSelection') {
+                        // 恢復隊長選擇階段
+                        if (this.isHost) {
+                            if (vData.manualSelection) {
+                                this.showManualLeaderSelection(vData.players);
+                            } else {
+                                this.showLeaderSelection(vData.players);
+                            }
+                        } else {
+                            const message = vData.manualSelection ?
+                                '房主正在選擇第一個隊長...' :
+                                '房主正在抽選第一個隊長...';
+                            this.showMessage(message, 'info');
+                        }
+                    } else if (data.votingStatus.votingType === 'teamSelection') {
                         // 恢復隊長選擇隊員界面
                         if (vData.isLeader) {
                             this.showMessage(`你是隊長！請選擇 ${vData.requiredTeamSize} 名隊員`, 'info');
