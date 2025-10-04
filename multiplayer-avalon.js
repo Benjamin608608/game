@@ -2047,7 +2047,7 @@ class MultiplayerAvalonGame {
     confirmTeam() {
         this.socket.emit('confirmTeam', {
             roomCode: this.roomCode,
-            teamMembers: this.selectedTeam.map(p => p.id)
+            teamMembers: this.selectedTeam.map(p => p.name || p.playerName)
         });
     }
 
@@ -2141,7 +2141,7 @@ class MultiplayerAvalonGame {
                 </p>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
                     ${targets.map(target => `
-                        <button class="btn danger" onclick="window.game.assassinate('${target.id}')" 
+                        <button class="btn danger" onclick="window.game.assassinate('${target.name}')"
                                 style="padding: 15px; font-size: 1.1em;">
                             🎯 刺殺 ${target.name}
                         </button>
@@ -2154,11 +2154,11 @@ class MultiplayerAvalonGame {
     }
 
     // 執行刺殺
-    assassinate(targetId) {
+    assassinate(targetName) {
         if (confirm('確定要刺殺這名玩家嗎？此決定無法撤回！')) {
             this.socket.emit('assassinate', {
                 roomCode: this.roomCode,
-                targetId: targetId
+                targetName: targetName
             });
         }
     }

@@ -1451,15 +1451,29 @@ io.on('connection', (socket) => {
         const { roomCode, teamMembers } = data;
         const room = rooms.get(roomCode);
         const playerInfo = players.get(socket.id);
-        
+
         if (!room || !playerInfo || room.gameData.currentPhase !== 'teamSelection') return;
         if (room.gameData.currentLeader !== socket.id) return;
-        
+
+        // 將玩家名字轉換為當前的 socket ID（支援重連）
+        const teamMemberIds = teamMembers.map(nameOrId => {
+            // 先嘗試當作名字查找
+            const playerByName = getOrderedPlayers(room).find(p => p.name === nameOrId);
+            if (playerByName) {
+                return playerByName.id;
+            }
+            // 如果找不到，嘗試當作 ID（向下兼容）
+            if (room.players.has(nameOrId)) {
+                return nameOrId;
+            }
+            return null;
+        }).filter(id => id !== null);
+
         // 設定選中的隊員
-        room.gameData.selectedPlayers = teamMembers;
-        
+        room.gameData.selectedPlayers = teamMemberIds;
+
         // 獲取隊員名字
-        const teamMemberNames = teamMembers.map(memberId => {
+        const teamMemberNames = teamMemberIds.map(memberId => {
             const player = room.players.get(memberId);
             return player ? player.name : '';
         }).filter(name => name);
@@ -1509,20 +1523,28 @@ io.on('connection', (socket) => {
 
     // 刺殺選擇
     socket.on('assassinate', (data) => {
-        const { roomCode, targetId } = data;
+        const { roomCode, targetName, targetId } = data;
         const room = rooms.get(roomCode);
         const playerInfo = players.get(socket.id);
-        
+
         if (!room || !playerInfo || room.gameData.currentPhase !== 'assassination') return;
-        
+
         // 檢查是否是刺客或有刺殺能力的摩甘娜
         const player = room.players.get(socket.id);
-        const canAssassinate = player.role === '刺客' || 
+        const canAssassinate = player.role === '刺客' ||
                               (player.role === '摩甘娜' && room.gameData.morganaAssassinAbility);
-        
+
         if (!canAssassinate) return;
-        
-        const targetPlayer = room.players.get(targetId);
+
+        // 用名字查找目標玩家（支援重連）
+        let targetPlayer = null;
+        if (targetName) {
+            targetPlayer = getOrderedPlayers(room).find(p => p.name === targetName);
+        } else if (targetId) {
+            // 向下兼容舊版本
+            targetPlayer = room.players.get(targetId);
+        }
+
         if (!targetPlayer || targetPlayer.isEvil) return;
         
         // 執行刺殺
