@@ -759,14 +759,29 @@ io.on('connection', (socket) => {
             // 檢查玩家是否需要參與當前的投票
             let needsVoting = false;
             let votingType = '';
+            let votingData = {};
 
             if (room.gameData.currentPhase === 'teamVote') {
                 needsVoting = true;
                 votingType = 'team';
+                // 提供隊伍投票所需的資料
+                const currentLeader = room.players.get(room.gameData.currentLeader);
+                votingData = {
+                    teamMembers: room.gameData.selectedPlayers.map(playerId => {
+                        const player = room.players.get(playerId);
+                        return player ? player.name : '';
+                    }).filter(name => name),
+                    leaderName: currentLeader ? currentLeader.name : '',
+                    consecutiveRejects: room.gameData.consecutiveRejects || 0
+                };
             } else if (room.gameData.currentPhase === 'missionVote') {
                 // 檢查玩家是否在當前任務隊伍中
                 needsVoting = room.gameData.selectedPlayers.includes(socket.id);
                 votingType = 'mission';
+                // 提供任務投票所需的資料
+                votingData = {
+                    teamSize: room.gameData.selectedPlayers.length
+                };
             } else if (room.gameData.currentPhase === 'lakeLady') {
                 // 檢查玩家是否是湖中女神持有者
                 needsVoting = room.gameData.lakeLadyHolder === socket.id;
@@ -793,7 +808,8 @@ io.on('connection', (socket) => {
                 votingStatus: {
                     needsVoting: needsVoting,
                     votingType: votingType,
-                    hasVoted: room.gameData.votes.some(v => v.playerId === socket.id)
+                    hasVoted: room.gameData.votes.some(v => v.playerId === socket.id),
+                    votingData: votingData
                 }
             });
         } else {

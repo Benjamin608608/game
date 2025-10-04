@@ -402,13 +402,18 @@ class MultiplayerAvalonGame {
             // 檢查是否需要恢復投票界面
             if (data.votingStatus && data.votingStatus.needsVoting && !data.votingStatus.hasVoted) {
                 setTimeout(() => {
+                    const vData = data.votingStatus.votingData || {};
                     if (data.votingStatus.votingType === 'team') {
                         // 恢復隊伍投票界面
-                        this.showTeamVoting([], this.gameData.consecutiveRejects || 0);
+                        this.showTeamVoting(
+                            vData.teamMembers || [],
+                            vData.consecutiveRejects || 0,
+                            vData.leaderName || ''
+                        );
                         this.showMessage('請繼續進行隊伍投票', 'info');
                     } else if (data.votingStatus.votingType === 'mission') {
                         // 恢復任務投票界面
-                        this.showMissionVoting();
+                        this.showMissionVoting(vData.teamSize || this.gameData.selectedPlayers.length);
                         this.showMessage('請繼續進行任務投票', 'info');
                     } else if (data.votingStatus.votingType === 'lakeLady') {
                         // 恢復湖中女神界面，需要獲取可選目標
